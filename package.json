@@ -10,6 +10,7 @@
     "dev:electron:build": "tsup --config tsup.electron.config.ts --watch",
     "dev:electron:run": "wait-on tcp:5173 file:dist-electron/main/index.js file:dist-electron/preload/index.js && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 nodemon --watch dist-electron --ext js --exec \"electron .\"",
     "build": "npm run build:renderer && npm run build:electron",
+    "dist:win": "npm run build && electron-builder --win nsis",
     "build:renderer": "vite build",
     "build:electron": "tsup --config tsup.electron.config.ts",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3",
@@ -26,6 +27,34 @@
   "author": "",
   "license": "MIT",
   "type": "module",
+  "build": {
+    "appId": "com.aitasker.app",
+    "productName": "AITasker",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "verifyUpdateCodeSignature": false,
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
     "@hookform/resolvers": "^5.2.2",
@@ -46,6 +75,7 @@
     "react-dom": "^19.2.4",
     "react-hook-form": "^7.71.2",
     "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "shadcn": "^4.0.7",
     "shiki": "^4.0.2",
     "tailwind-merge": "^3.5.0",
@@ -63,6 +93,7 @@
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.9",
     "electron": "^41.0.2",
+    "electron-builder": "^26.8.1",
     "nodemon": "^3.1.14",
     "tailwindcss": "^4.2.1",
     "tsup": "^8.5.0",

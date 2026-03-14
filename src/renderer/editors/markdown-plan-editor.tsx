@@ -1,19 +1,23 @@
 /*
-Purpose: Provide the editable Markdown textarea used for manual plan updates in the MVP.
-Out of scope: Persistence, markdown preview rendering, and rich text editing.
+Purpose: WYSIWYG Markdown editor for manual plan updates.
+Out of scope: Persistence and markdown preview rendering.
 */
+import { MilkdownEditor } from "@/renderer/editors/milkdown-editor";
+
 export interface MarkdownPlanEditorProps {
   onChange(value: string): void;
+  resetKey?: string | number;
   value: string;
 }
 
-export function MarkdownPlanEditor({ onChange, value }: MarkdownPlanEditorProps) {
+export function MarkdownPlanEditor({ onChange, value, resetKey }: MarkdownPlanEditorProps) {
   return (
-    <textarea
+    <MilkdownEditor
       className="app-editor"
       value={value}
-      onChange={(event) => onChange(event.target.value)}
-      placeholder="Редактируйте Markdown-план вручную..."
+      onChange={onChange}
+      resetKey={resetKey}
+      placeholder="Редактируйте Markdown-план..."
     />
   );
 }

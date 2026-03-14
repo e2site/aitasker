@@ -76,7 +76,7 @@ textarea {
 }
 
 .app-grid {
-  @apply mx-auto grid w-full gap-6 xl:grid-cols-[420px_minmax(0,1fr)];
+  @apply mx-auto grid w-full gap-6;
 }
 
 .app-card {
@@ -134,11 +134,131 @@ textarea {
 }
 
 .app-markdown pre {
-  @apply overflow-x-auto rounded-2xl bg-slate-950 p-4 text-slate-100;
+  @apply overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-800;
 }
 
 .app-markdown code {
   @apply rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-900;
+}
+
+.app-markdown-table-wrap {
+  @apply my-5 overflow-x-auto rounded-2xl border border-slate-200 bg-white;
+}
+
+.app-markdown table {
+  @apply min-w-full border-collapse text-left text-sm;
+}
+
+.app-markdown thead {
+  @apply bg-slate-50;
+}
+
+.app-markdown th {
+  @apply border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500;
+}
+
+.app-markdown td {
+  @apply border-b border-slate-100 px-4 py-3 align-top text-sm leading-6 text-slate-700;
+}
+
+.app-markdown tbody tr:last-child td {
+  @apply border-b-0;
+}
+
+.app-code-block {
+  @apply my-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-50;
+}
+
+.app-code-block pre {
+  @apply m-0 overflow-x-auto rounded-none border-0 bg-transparent p-4 text-slate-800 shadow-none outline-none;
+}
+
+.app-code-block pre:focus,
+.app-code-block pre:focus-visible,
+.app-code-block code:focus,
+.app-code-block code:focus-visible {
+  outline: none;
+}
+
+.app-code-block code {
+  @apply bg-transparent p-0 font-mono text-[13px] leading-6 text-inherit;
+}
+
+/* Milkdown WYSIWYG editor */
+
+.milkdown-wrapper {
+  @apply relative;
+}
+
+.milkdown-wrapper .milkdown {
+  @apply outline-none min-h-[inherit];
+}
+
+.milkdown-wrapper .milkdown .ProseMirror {
+  @apply outline-none min-h-[inherit] w-full;
+}
+
+.milkdown-wrapper .milkdown .ProseMirror p {
+  @apply m-0 text-sm leading-6 text-slate-900;
+}
+
+.milkdown-wrapper .milkdown .ProseMirror h1 {
+  @apply mt-0 text-2xl font-semibold tracking-tight text-slate-900;
+}
+
+.milkdown-wrapper .milkdown .ProseMirror h2 {
+  @apply mt-4 text-lg font-semibold text-slate-900;
+}
+
+.milkdown-wrapper .milkdown .ProseMirror h3 {
+  @apply mt-3 text-base font-semibold text-slate-900;
+}
+
+.milkdown-wrapper .milkdown .ProseMirror ul,
+.milkdown-wrapper .milkdown .ProseMirror ol {
+  @apply pl-5 text-sm leading-6 text-slate-800;
+}
+
+.milkdown-wrapper .milkdown .ProseMirror li {
+  @apply my-0.5;
+}
+
+.milkdown-wrapper .milkdown .ProseMirror code {
+  @apply rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-900;
+}
+
+.milkdown-wrapper .milkdown .ProseMirror pre {
+  @apply overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-800;
+}
+
+.milkdown-wrapper .milkdown .ProseMirror blockquote {
+  @apply border-l-4 border-slate-300 pl-4 text-sm italic text-slate-600;
+}
+
+.milkdown-wrapper .milkdown .ProseMirror hr {
+  @apply my-4 border-slate-200;
+}
+
+.milkdown-wrapper .milkdown .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  @apply pointer-events-none float-left h-0 text-slate-400;
+}
+
+.selection-popover {
+  @apply pointer-events-auto absolute z-20;
+  transform: translateX(-50%) translateY(calc(-100% - 8px));
+}
+
+.selection-popover__btn {
+  @apply inline-flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white shadow-lg transition hover:bg-slate-700;
+}
+
+.milkdown-toolbar {
+  @apply flex flex-wrap gap-1 border-b border-slate-200 pb-2 mb-2;
+}
+
+.milkdown-toolbar__btn {
+  @apply rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-white hover:text-slate-900 disabled:opacity-40;
 }
 
 /* Task tracker UI */
@@ -159,6 +279,10 @@ textarea {
 
 .task-card--planning {
   --status-color: theme(colors.sky.400);
+}
+
+.task-card--requires_clarification {
+  --status-color: theme(colors.rose.400);
 }
 
 .task-card--implementation {
@@ -202,45 +326,73 @@ textarea {
   @apply text-xs uppercase tracking-[0.18em] text-slate-500;
 }
 
-.detail-toolbar {
-  @apply flex flex-wrap items-center gap-2;
+.mcp-hero-card {
+  @apply rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,rgba(241,245,249,0.9),rgba(255,255,255,0.96))] p-5 shadow-sm;
 }
 
-.detail-tabs {
-  @apply flex gap-0 border-b border-slate-200;
+.mcp-flow-grid {
+  @apply grid gap-3 lg:grid-cols-2;
 }
 
-.status-switcher {
-  @apply flex flex-wrap gap-2;
+.mcp-flow-card {
+  @apply rounded-2xl border border-slate-200 bg-white p-4 shadow-sm;
 }
 
-.status-chip {
-  @apply rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50;
+.mcp-flow-card__index {
+  @apply inline-flex size-8 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white;
 }
 
-.status-chip--active {
-  @apply border-slate-900 bg-slate-900 text-white;
+.mcp-flow-card__title {
+  @apply mt-3 text-sm font-semibold text-slate-900;
 }
 
-.detail-tab {
-  @apply -mb-px border-b-2 border-transparent px-4 py-2.5 text-sm font-medium text-slate-500 transition hover:text-slate-800;
+.mcp-flow-card__text {
+  @apply mt-1 text-sm leading-6 text-slate-600;
 }
 
-.detail-tab--active {
-  @apply border-b-2 border-slate-900 text-slate-900;
+.mcp-prompt-card {
+  @apply rounded-2xl border border-slate-200 bg-white p-4 shadow-sm;
+}
+
+.mcp-prompt-block {
+  @apply mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs leading-6 text-slate-700 whitespace-pre-wrap;
+}
+
+.mcp-copy-button {
+  @apply min-w-32;
+}
+
+.plan-workspace {
+  @apply space-y-4;
+}
+
+.plan-thread-message {
+  @apply rounded-2xl border px-4 py-3 shadow-sm;
+}
+
+.plan-thread-message--human {
+  @apply border-sky-200 bg-[linear-gradient(180deg,rgba(239,246,255,0.96),rgba(255,255,255,0.98))];
+}
+
+.plan-thread-message--agent {
+  @apply border-emerald-200 bg-[linear-gradient(180deg,rgba(236,253,245,0.96),rgba(255,255,255,0.98))];
+}
+
+.plan-thread-message__meta {
+  @apply mb-3 flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.18em] text-slate-500;
+}
+
+.plan-thread-message__author {
+  @apply font-semibold text-slate-700;
+}
+
+.plan-thread-message__body .app-markdown {
+  @apply border-0 bg-transparent p-0 shadow-none;
 }
 
 .task-meta-row {
   @apply flex flex-wrap items-center gap-3 text-xs text-slate-400;
 }
-
-.app-header {
-  @apply flex h-12 items-center border-b border-slate-200/60 bg-white/60 px-6 backdrop-blur;
-}
-
-/*
----break---
-*/
 
 .dark {
   --background: oklch(0.145 0 0);

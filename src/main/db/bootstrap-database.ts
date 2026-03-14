@@ -1,5 +1,5 @@
 /*
-Назначение: Создает и мягко обновляет SQLite-таблицы приложения при запуске, включая миграцию задач на проекты.
+Назначение: Создает и мягко обновляет SQLite-таблицы приложения при запуске, включая миграции задач, проектов и ревизий планов.
 Не входит: Генерация Drizzle-миграций и бизнес-логика доступа к данным.
 */
 import type Database from "better-sqlite3";
@@ -51,6 +51,17 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
       source TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS plan_revisions (
+      id TEXT PRIMARY KEY NOT NULL,
+      plan_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      content_md TEXT NOT NULL,
+      source TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
 
@@ -162,5 +173,7 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
 
   sqlite.exec(`
     CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_revisions_task_id ON plan_revisions(task_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_revisions_plan_id ON plan_revisions(plan_id);
   `);
 }

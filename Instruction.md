@@ -1,6 +1,6 @@
 <!--
-Purpose: Explain how to run AITasker in MCP-only mode and connect an external agent such as Claude Code to tasks and plans.
-Out of scope: SDK-based provider integration, cloud deployment, and production packaging.
+Назначение: Объясняет, как запускать AITasker в MCP-режиме и как внешний агент работает с задачами, планами, обсуждением и открытыми вопросами.
+Не входит: SDK-интеграции провайдеров, облачный деплой и production-упаковка.
 -->
 
 # Instruction
@@ -22,7 +22,7 @@ Out of scope: SDK-based provider integration, cloud deployment, and production p
 
 - создает локальные задачи
 - хранит их в SQLite
-- показывает текущий Markdown-план
+- показывает текущий Markdown-план и переписку по нему
 - позволяет редактировать план вручную
 - поднимает локальный MCP HTTP server
 
@@ -34,13 +34,18 @@ Out of scope: SDK-based provider integration, cloud deployment, and production p
   - `find_tasks`
   - `get_task`
   - `get_plan`
-  - `save_plan`
-  - `append_plan_note`
+  - `get_plan_extension`
+  - `get_plan_improvement`
+- `save_plan`
+- `append_plan_extension`
+- `append_plan_improvement`
+- `consolidate_plan_discussion`
 - resources:
   - `task://{id}`
   - `plan://{taskId}`
 - prompt:
   - `plan_task`
+  - `compress_plan_discussion`
 
 ## Как запустить приложение
 
@@ -109,6 +114,8 @@ claude mcp list
    - находит задачу
    - читает задачу
    - при необходимости читает текущий план
+   - при необходимости формирует отдельный список открытых вопросов
+   - при необходимости пишет сообщения в расширения и доработки
    - генерирует Markdown
    - сохраняет план через `save_plan`
 4. План появляется в AITasker и доступен для ручного редактирования.
@@ -133,7 +140,17 @@ claude mcp list
 2. `get_task`
 3. при необходимости `get_plan`
 4. сформировать Markdown в формате плана
-5. `save_plan`
+5. при наличии незакрытых вопросов передать их отдельным массивом `openQuestions`
+6. `save_plan`
+
+Если по задаче уже есть переписка в расширениях и доработках, внешний агент может пройти отдельную цепочку:
+
+1. `get_task`
+2. `get_plan`
+3. собрать новый цельный Markdown-план с учетом переписки
+4. `consolidate_plan_discussion`
+
+После этого отдельные discussion-блоки очищаются, а их содержание переезжает в основной план.
 
 Формат плана:
 
@@ -151,16 +168,16 @@ claude mcp list
 2. ...
 3. ...
 
-## Открытые вопросы
-- ...
-
 ## Критерии готовности
 - ...
 ```
 
+Открытые вопросы теперь не должны встраиваться в markdown-план. Внешний агент передает их отдельным полем `openQuestions` в `save_plan` или `consolidate_plan_discussion`. В интерфейсе AITasker они появляются в блоке `Обсуждение` как вопросы с полем ответа. После ответа пользователя вопрос исчезает из списка открытых и превращается в обычную переписку.
+
 ## Prompt для MCP-клиента
 
 Сервер отдает prompt `plan_task`.
+Для сжатия переписки обратно в план сервер также отдает prompt `compress_plan_discussion`.
 
 Его назначение:
 

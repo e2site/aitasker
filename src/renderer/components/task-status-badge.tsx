@@ -8,12 +8,14 @@ import { cn } from "@/renderer/components/ui/class-names";
 const statusClasses: Record<TaskStatus, string> = {
   new: "bg-slate-200 text-slate-800",
   planning: "bg-sky-100 text-sky-800",
+  requires_clarification: "bg-rose-100 text-rose-800",
   implementation: "bg-amber-100 text-amber-800",
   completed: "bg-emerald-100 text-emerald-800"
 };
 const statusLabels: Record<TaskStatus, string> = {
   new: "Новая",
   planning: "Планирование",
+  requires_clarification: "Требует уточнений",
   implementation: "Реализация",
   completed: "Выполнено"
 };

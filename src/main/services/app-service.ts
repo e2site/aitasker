@@ -1,14 +1,19 @@
 /*
-Назначение: Дает renderer и MCP единый сервисный API для работы с проектами, задачами и планами.
+Назначение: Дает renderer и MCP единый сервисный API для работы с проектами, задачами, планами, расширениями и доработками.
 Не входит: Детали IPC-транспорта, управление Electron-окнами и низкоуровневый bootstrap SQLite.
 */
 import type {
-  AppendPlanNoteInput,
+  AnswerPlanQuestionInput,
+  AppendPlanExtensionInput,
+  AppendPlanImprovementInput,
   AppHealthSnapshot,
+  ConsolidatePlanDiscussionInput,
   CreateProjectInput,
   CreateTaskInput,
+  DesktopDataChangeEvent,
   DeleteTaskResult,
   ProjectRecord,
+  RestorePlanRevisionInput,
   SavePlanInput,
   TaskDetail,
   TaskRecord,
@@ -17,13 +22,25 @@ import type {
   UpdateProjectProfileInput
 } from "../../shared/contracts/desktop-api";
 import {
-  appendPlanNoteInputSchema,
+  answerPlanQuestionInputSchema,
+  appendPlanExtensionInputSchema,
+  appendPlanImprovementInputSchema,
+  consolidatePlanDiscussionInputSchema,
   createProjectInputSchema,
   createTaskInputSchema,
+  restorePlanRevisionInputSchema,
   savePlanInputSchema,
   updateTaskStatusInputSchema,
   updateProjectProfileInputSchema
 } from "../../shared/contracts/desktop-api";
+import {
+  answerManagedPlanQuestion,
+  appendManagedPlanBlock,
+  consolidateManagedPlanDiscussion,
+  extractBasePlanContent,
+  replaceManagedPlanQuestions,
+  replaceBasePlanContent
+} from "../../shared/plans/managed-plan-content";
 import type { AgentSessionRepository } from "../db/agent-session-repository";
 import type { PlanRepository } from "../db/plan-repository";
 import type { ProjectRepository } from "../db/project-repository";
@@ -35,6 +52,7 @@ export interface AppServiceDependencies {
   databasePath: string;
   getMcpEndpoint(): string | null;
   isMcpRunning(): boolean;
+  onDataChanged?(event: DesktopDataChangeEvent): void;
   planRepository: PlanRepository;
   platform: string;
   projectRepository: ProjectRepository;
@@ -42,7 +60,10 @@ export interface AppServiceDependencies {
 }
 
 export interface AppService {
-  appendPlanNote(input: AppendPlanNoteInput): Promise<TaskDetail>;
+  answerPlanQuestion(input: AnswerPlanQuestionInput): Promise<TaskDetail>;
+  appendPlanExtension(input: AppendPlanExtensionInput): Promise<TaskDetail>;
+  appendPlanImprovement(input: AppendPlanImprovementInput): Promise<TaskDetail>;
+  consolidatePlanDiscussion(input: ConsolidatePlanDiscussionInput): Promise<TaskDetail>;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   createTask(input: CreateTaskInput): Promise<TaskDetail>;
   deleteTask(taskId: string): Promise<DeleteTaskResult>;
@@ -51,12 +72,17 @@ export interface AppService {
   getTaskDetail(taskId: string, projectId?: string): Promise<TaskDetail>;
   listProjects(): Promise<ProjectRecord[]>;
   listTasks(projectId?: string): Promise<TaskRecord[]>;
+  restorePlanRevision(input: RestorePlanRevisionInput): Promise<TaskDetail>;
   savePlan(input: SavePlanInput): Promise<TaskDetail>;
   updateTaskStatus(input: UpdateTaskStatusInput): Promise<TaskDetail>;
   updateProjectProfile(input: UpdateProjectProfileInput): Promise<ProjectRecord>;
 }
 
 export function createAppService(dependencies: AppServiceDependencies): AppService {
+  const emitDataChanged = (event: DesktopDataChangeEvent) => {
+    dependencies.onDataChanged?.(event);
+  };
+
   const getTaskDetail = async (taskId: string, projectId?: string): Promise<TaskDetail> => {
     const task = await dependencies.taskRepository.getById(taskId, projectId);
 
@@ -70,8 +96,9 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
       throw new Error(`Project ${task.projectId} was not found.`);
     }
 
-    const [plan, agentSession] = await Promise.all([
+    const [plan, planRevisions, agentSession] = await Promise.all([
       dependencies.planRepository.getByTaskId(taskId),
+      dependencies.planRepository.listRevisions(taskId),
       dependencies.agentSessionRepository.getByTaskId(taskId)
     ]);
 
@@ -79,6 +106,7 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
       project,
       task,
       plan,
+      planRevisions,
       agentSession
     };
   };
@@ -102,46 +130,131 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
   };
 
   return {
-    async appendPlanNote(input) {
-      const parsedInput = appendPlanNoteInputSchema.parse(input);
+    async answerPlanQuestion(input) {
+      const parsedInput = answerPlanQuestionInputSchema.parse(input);
       const detail = await getTaskDetail(parsedInput.taskId);
-      const currentPlan =
-        detail.plan?.contentMd ||
-        `# План задачи
 
-## Цель
-...
-
-## Контекст
-...
-
-## Шаги
-1. ...
-
-## Открытые вопросы
-- ...
-
-## Критерии готовности
-- ...`;
-      const nextContent = `${currentPlan.trim()}
-
-## Заметки
-- ${parsedInput.note.trim()}`;
+      if (!detail.plan) {
+        throw new Error("Сначала создайте или сохраните базовый план, затем отвечайте на вопросы.");
+      }
 
       await dependencies.planRepository.save({
         taskId: parsedInput.taskId,
-        contentMd: nextContent,
-        source: "agent"
+        contentMd: answerManagedPlanQuestion(detail.plan.contentMd, parsedInput.questionId, parsedInput.answer),
+        source: detail.plan.source
       });
       await dependencies.taskRepository.touch(parsedInput.taskId);
       await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "answer-plan-question",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
+
+      return getTaskDetail(parsedInput.taskId);
+    },
+    async appendPlanExtension(input) {
+      const parsedInput = appendPlanExtensionInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.taskId);
+
+      if (!detail.plan) {
+        throw new Error("Сначала создайте или сохраните базовый план, затем добавляйте его расширения.");
+      }
+
+      await dependencies.planRepository.save({
+        taskId: parsedInput.taskId,
+        contentMd: appendManagedPlanBlock(
+          detail.plan.contentMd,
+          "extension",
+          parsedInput.content,
+          parsedInput.author
+        ),
+        source: detail.plan.source
+      });
+      await dependencies.taskRepository.touch(parsedInput.taskId);
+      await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "append-plan-extension",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
+
+      return getTaskDetail(parsedInput.taskId);
+    },
+    async appendPlanImprovement(input) {
+      const parsedInput = appendPlanImprovementInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.taskId);
+
+      if (!detail.plan) {
+        throw new Error("Сначала создайте или сохраните базовый план, затем добавляйте его доработки.");
+      }
+
+      await dependencies.planRepository.save({
+        taskId: parsedInput.taskId,
+        contentMd: appendManagedPlanBlock(
+          detail.plan.contentMd,
+          "improvement",
+          parsedInput.content,
+          parsedInput.author
+        ),
+        source: detail.plan.source
+      });
+      await dependencies.taskRepository.touch(parsedInput.taskId);
+      await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "append-plan-improvement",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
+
+      return getTaskDetail(parsedInput.taskId);
+    },
+    async consolidatePlanDiscussion(input) {
+      const parsedInput = consolidatePlanDiscussionInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.taskId);
+      const currentPlanContent = detail.plan?.contentMd ?? "";
+      const nextBaseContentMd = extractBasePlanContent(parsedInput.contentMd);
+      const finalContentMd = consolidateManagedPlanDiscussion(
+        currentPlanContent,
+        nextBaseContentMd,
+        parsedInput.openQuestions
+      );
+
+      await dependencies.planRepository.save({
+        taskId: parsedInput.taskId,
+        contentMd: finalContentMd,
+        createRevision: parsedInput.source === "agent",
+        source: parsedInput.source
+      });
+      await dependencies.projectRepository.touch(detail.task.projectId);
+      if (parsedInput.source === "agent") {
+        await dependencies.agentSessionRepository.upsert({
+          provider: "mcp",
+          status: "completed",
+          taskId: parsedInput.taskId,
+          externalSessionId: null,
+          externalThreadId: null
+        });
+      }
+      emitDataChanged({
+        reason: "consolidate-plan-discussion",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
 
       return getTaskDetail(parsedInput.taskId);
     },
     async createProject(input) {
       const parsedInput = createProjectInputSchema.parse(input);
 
-      return dependencies.projectRepository.create(parsedInput);
+      const project = await dependencies.projectRepository.create(parsedInput);
+      emitDataChanged({
+        reason: "create-project",
+        projectId: project.id,
+        taskId: null
+      });
+
+      return project;
     },
     async createTask(input) {
       const parsedInput = createTaskInputSchema.parse(input);
@@ -152,6 +265,11 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
         title: parsedInput.title
       });
       await dependencies.projectRepository.touch(project.id);
+      emitDataChanged({
+        reason: "create-task",
+        projectId: project.id,
+        taskId: task.id
+      });
 
       return getTaskDetail(task.id);
     },
@@ -167,6 +285,12 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
       if (!deleted) {
         throw new Error(`Task ${taskId} could not be deleted.`);
       }
+
+      emitDataChanged({
+        reason: "delete-task",
+        projectId: existingTask.projectId,
+        taskId
+      });
 
       return {
         deletedTaskId: taskId
@@ -192,11 +316,40 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
     listTasks(projectId) {
       return dependencies.taskRepository.list(projectId);
     },
+    async restorePlanRevision(input) {
+      const parsedInput = restorePlanRevisionInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.taskId);
+
+      await dependencies.planRepository.restoreRevision(parsedInput);
+      await dependencies.taskRepository.touch(parsedInput.taskId);
+      await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "restore-plan-revision",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
+
+      return getTaskDetail(parsedInput.taskId);
+    },
     async savePlan(input) {
       const parsedInput = savePlanInputSchema.parse(input);
       const detail = await getTaskDetail(parsedInput.taskId);
+      const currentPlanContent = detail.plan?.contentMd ?? "";
+      const nextBaseContentMd = extractBasePlanContent(parsedInput.contentMd);
+      const nextContentMd = replaceBasePlanContent(
+        currentPlanContent,
+        nextBaseContentMd
+      );
+      const finalContentMd =
+        parsedInput.openQuestions === undefined
+          ? nextContentMd
+          : replaceManagedPlanQuestions(nextContentMd, parsedInput.openQuestions);
 
-      await dependencies.planRepository.save(parsedInput);
+      await dependencies.planRepository.save({
+        ...parsedInput,
+        contentMd: finalContentMd,
+        createRevision: parsedInput.source === "agent"
+      });
       await dependencies.projectRepository.touch(detail.task.projectId);
       if (parsedInput.source === "agent") {
         await dependencies.agentSessionRepository.upsert({
@@ -207,6 +360,11 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
           externalThreadId: null
         });
       }
+      emitDataChanged({
+        reason: "save-plan",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
 
       return getTaskDetail(parsedInput.taskId);
     },
@@ -216,13 +374,25 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
 
       await dependencies.taskRepository.updateStatus(parsedInput.taskId, parsedInput.status as TaskStatus);
       await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "update-task-status",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
 
       return getTaskDetail(parsedInput.taskId);
     },
     async updateProjectProfile(input) {
       const parsedInput = updateProjectProfileInputSchema.parse(input);
 
-      return dependencies.projectRepository.updateProfile(parsedInput);
+      const project = await dependencies.projectRepository.updateProfile(parsedInput);
+      emitDataChanged({
+        reason: "update-project-profile",
+        projectId: project.id,
+        taskId: null
+      });
+
+      return project;
     }
   };
 }

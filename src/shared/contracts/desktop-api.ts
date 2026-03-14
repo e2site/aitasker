@@ -1,5 +1,5 @@
 /*
-Назначение: Описывает общие доменные модели, схемы валидации и preload-контракт десктопного приложения.
+Назначение: Описывает общие доменные модели, схемы валидации и preload-контракт десктопного приложения, включая операции с задачами, планом, обсуждением и статусами.
 Не входит: Реализация репозиториев, детали renderer-компонентов и интеграция с внешними SDK.
 */
 import { z } from "zod";
@@ -7,11 +7,20 @@ import { z } from "zod";
 export const agentProviderIdSchema = z.enum(["mcp"]);
 export type AgentProviderId = z.infer<typeof agentProviderIdSchema>;
 
-export const taskStatusSchema = z.enum(["new", "planning", "implementation", "completed"]);
+export const taskStatusSchema = z.enum([
+  "new",
+  "planning",
+  "requires_clarification",
+  "implementation",
+  "completed"
+]);
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
 
 export const planSourceSchema = z.enum(["human", "agent"]);
 export type PlanSource = z.infer<typeof planSourceSchema>;
+
+export const planDiscussionAuthorSchema = z.enum(["human", "agent"]);
+export type PlanDiscussionAuthor = z.infer<typeof planDiscussionAuthorSchema>;
 
 export const agentSessionStatusSchema = z.enum(["idle", "running", "completed", "failed"]);
 export type AgentSessionStatus = z.infer<typeof agentSessionStatusSchema>;
@@ -52,6 +61,16 @@ export const planRecordSchema = z.object({
 });
 export type PlanRecord = z.infer<typeof planRecordSchema>;
 
+export const planRevisionRecordSchema = z.object({
+  id: z.string(),
+  planId: z.string(),
+  taskId: z.string(),
+  contentMd: z.string(),
+  source: planSourceSchema,
+  createdAt: z.string()
+});
+export type PlanRevisionRecord = z.infer<typeof planRevisionRecordSchema>;
+
 export const agentSessionRecordSchema = z.object({
   id: z.string(),
   taskId: z.string(),
@@ -68,6 +87,7 @@ export const taskDetailSchema = z.object({
   project: projectRecordSchema,
   task: taskRecordSchema,
   plan: planRecordSchema.nullable(),
+  planRevisions: z.array(planRevisionRecordSchema),
   agentSession: agentSessionRecordSchema.nullable()
 });
 export type TaskDetail = z.infer<typeof taskDetailSchema>;
@@ -145,15 +165,39 @@ export type UpdateProjectProfileInput = z.infer<typeof updateProjectProfileInput
 export const savePlanInputSchema = z.object({
   taskId: z.string(),
   contentMd: z.string().trim().min(1, "План не может быть пустым."),
+  openQuestions: z.array(z.string().trim().min(1).max(4_000)).max(50).optional(),
   source: planSourceSchema.default("human")
 });
 export type SavePlanInput = z.infer<typeof savePlanInputSchema>;
 
-export const appendPlanNoteInputSchema = z.object({
+export const appendPlanExtensionInputSchema = z.object({
   taskId: z.string(),
-  note: z.string().trim().min(1).max(4_000)
+  content: z.string().trim().min(1).max(4_000),
+  author: planDiscussionAuthorSchema.default("human")
 });
-export type AppendPlanNoteInput = z.infer<typeof appendPlanNoteInputSchema>;
+export type AppendPlanExtensionInput = z.infer<typeof appendPlanExtensionInputSchema>;
+
+export const appendPlanImprovementInputSchema = z.object({
+  taskId: z.string(),
+  content: z.string().trim().min(1).max(4_000),
+  author: planDiscussionAuthorSchema.default("human")
+});
+export type AppendPlanImprovementInput = z.infer<typeof appendPlanImprovementInputSchema>;
+
+export const consolidatePlanDiscussionInputSchema = z.object({
+  taskId: z.string(),
+  contentMd: z.string().trim().min(1, "План не может быть пустым."),
+  openQuestions: z.array(z.string().trim().min(1).max(4_000)).max(50).optional(),
+  source: planSourceSchema.default("agent")
+});
+export type ConsolidatePlanDiscussionInput = z.infer<typeof consolidatePlanDiscussionInputSchema>;
+
+export const answerPlanQuestionInputSchema = z.object({
+  taskId: z.string(),
+  questionId: z.string(),
+  answer: z.string().trim().min(1).max(4_000)
+});
+export type AnswerPlanQuestionInput = z.infer<typeof answerPlanQuestionInputSchema>;
 
 export const deleteTaskResultSchema = z.object({
   deletedTaskId: z.string()
@@ -166,8 +210,36 @@ export const updateTaskStatusInputSchema = z.object({
 });
 export type UpdateTaskStatusInput = z.infer<typeof updateTaskStatusInputSchema>;
 
+export const restorePlanRevisionInputSchema = z.object({
+  revisionId: z.string(),
+  taskId: z.string()
+});
+export type RestorePlanRevisionInput = z.infer<typeof restorePlanRevisionInputSchema>;
+
+export const desktopDataChangeEventSchema = z.object({
+  projectId: z.string().nullable(),
+  reason: z.enum([
+    "append-plan-extension",
+    "append-plan-improvement",
+    "answer-plan-question",
+    "consolidate-plan-discussion",
+    "create-project",
+    "create-task",
+    "delete-task",
+    "restore-plan-revision",
+    "save-plan",
+    "update-project-profile",
+    "update-task-status"
+  ]),
+  taskId: z.string().nullable()
+});
+export type DesktopDataChangeEvent = z.infer<typeof desktopDataChangeEventSchema>;
+
 export interface DesktopApi {
-  appendPlanNote(input: AppendPlanNoteInput): Promise<TaskDetail>;
+  appendPlanExtension(input: AppendPlanExtensionInput): Promise<TaskDetail>;
+  appendPlanImprovement(input: AppendPlanImprovementInput): Promise<TaskDetail>;
+  answerPlanQuestion(input: AnswerPlanQuestionInput): Promise<TaskDetail>;
+  consolidatePlanDiscussion(input: ConsolidatePlanDiscussionInput): Promise<TaskDetail>;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   createTask(input: CreateTaskInput): Promise<TaskDetail>;
   deleteTask(taskId: string): Promise<DeleteTaskResult>;
@@ -176,6 +248,9 @@ export interface DesktopApi {
   getTaskDetail(taskId: string): Promise<TaskDetail>;
   listProjects(): Promise<ProjectRecord[]>;
   listTasks(): Promise<TaskRecord[]>;
+  onDataChanged(listener: (event: DesktopDataChangeEvent) => void): () => void;
+  onFocusTask(listener: (taskId: string) => void): () => void;
+  restorePlanRevision(input: RestorePlanRevisionInput): Promise<TaskDetail>;
   savePlan(input: SavePlanInput): Promise<TaskDetail>;
   updateProjectProfile(input: UpdateProjectProfileInput): Promise<ProjectRecord>;
   updateTaskStatus(input: UpdateTaskStatusInput): Promise<TaskDetail>;

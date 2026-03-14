@@ -3,10 +3,11 @@
 Не входит: Отрисовка списка задач и взаимодействие с панелью деталей.
 */
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { createTaskInputSchema, type CreateTaskInput } from "@/shared/contracts/desktop-api";
 import { Button } from "@/renderer/components/ui/button";
+import { MilkdownEditor } from "@/renderer/editors/milkdown-editor";
 
 export interface TaskCreateFormProps {
   isSubmitting: boolean;
@@ -29,6 +30,7 @@ export function TaskCreateForm({
       description: ""
     }
   });
+  const [descriptionResetKey, setDescriptionResetKey] = useState(0);
 
   useEffect(() => {
     if (selectedProjectName) {
@@ -49,6 +51,7 @@ export function TaskCreateForm({
           title: "",
           description: ""
         });
+        setDescriptionResetKey((k) => k + 1);
       })}
     >
       <div>
@@ -88,10 +91,12 @@ export function TaskCreateForm({
       </div>
 
       <div>
-        <textarea
+        <MilkdownEditor
           className="app-field"
+          value={form.watch("description")}
+          onChange={(value) => form.setValue("description", value, { shouldValidate: true })}
+          resetKey={descriptionResetKey}
           placeholder="Описание, контекст, ограничения, ожидаемый результат..."
-          {...form.register("description")}
         />
         {form.formState.errors.description ? (
           <p className="app-error">{form.formState.errors.description.message}</p>

@@ -1,9 +1,15 @@
 /*
-Purpose: Provide React Query hooks for saving plans and appending plan notes through the preload API.
-Out of scope: Editor UI, markdown rendering, and task selection state.
+Назначение: Дает React Query hooks для сохранения планов, расширений, доработок и восстановления ревизий через preload API.
+Не входит: Интерфейс редактора, markdown-рендеринг и состояние выбора задачи.
 */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { AppendPlanNoteInput, SavePlanInput } from "@/shared/contracts/desktop-api";
+import type {
+  AnswerPlanQuestionInput,
+  AppendPlanExtensionInput,
+  AppendPlanImprovementInput,
+  RestorePlanRevisionInput,
+  SavePlanInput
+} from "@/shared/contracts/desktop-api";
 
 export function useSavePlanMutation() {
   const queryClient = useQueryClient();
@@ -17,11 +23,47 @@ export function useSavePlanMutation() {
   });
 }
 
-export function useAppendPlanNoteMutation() {
+export function useAnswerPlanQuestionMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: AppendPlanNoteInput) => window.desktop.appendPlanNote(input),
+    mutationFn: (input: AnswerPlanQuestionInput) => window.desktop.answerPlanQuestion(input),
+    onSuccess: async (detail) => {
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.setQueryData(["task-detail", detail.task.id], detail);
+    }
+  });
+}
+
+export function useAppendPlanExtensionMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: AppendPlanExtensionInput) => window.desktop.appendPlanExtension(input),
+    onSuccess: async (detail) => {
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.setQueryData(["task-detail", detail.task.id], detail);
+    }
+  });
+}
+
+export function useAppendPlanImprovementMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: AppendPlanImprovementInput) => window.desktop.appendPlanImprovement(input),
+    onSuccess: async (detail) => {
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.setQueryData(["task-detail", detail.task.id], detail);
+    }
+  });
+}
+
+export function useRestorePlanRevisionMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: RestorePlanRevisionInput) => window.desktop.restorePlanRevision(input),
     onSuccess: async (detail) => {
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.setQueryData(["task-detail", detail.task.id], detail);

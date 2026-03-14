@@ -29,6 +29,7 @@ function normalizeTaskStatus(status: string): TaskStatus {
       return "new";
     case "new":
     case "planning":
+    case "requires_clarification":
     case "implementation":
     case "completed":
       return status;

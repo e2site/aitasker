@@ -1,12 +1,17 @@
 /*
-Назначение: Пробрасывает типизированный desktop API из preload в renderer через безопасный bridge.
+Назначение: Пробрасывает типизированный desktop API из preload в renderer через безопасный bridge, включая операции с планом и его служебными блоками.
 Не входит: Регистрация IPC-обработчиков, логика репозиториев и рендеринг интерфейса.
 */
 import type {
-  AppendPlanNoteInput,
+  AnswerPlanQuestionInput,
+  AppendPlanExtensionInput,
+  AppendPlanImprovementInput,
+  ConsolidatePlanDiscussionInput,
   CreateProjectInput,
   CreateTaskInput,
+  DesktopDataChangeEvent,
   DesktopApi,
+  RestorePlanRevisionInput,
   SavePlanInput,
   UpdateTaskStatusInput,
   UpdateProjectProfileInput
@@ -19,7 +24,10 @@ export interface PreloadRuntime {
 }
 
 const channels = {
-  appendPlanNote: "app:append-plan-note",
+  answerPlanQuestion: "app:answer-plan-question",
+  appendPlanExtension: "app:append-plan-extension",
+  appendPlanImprovement: "app:append-plan-improvement",
+  consolidatePlanDiscussion: "app:consolidate-plan-discussion",
   createProject: "app:create-project",
   createTask: "app:create-task",
   deleteTask: "app:delete-task",
@@ -28,6 +36,8 @@ const channels = {
   getTaskDetail: "app:get-task-detail",
   listProjects: "app:list-projects",
   listTasks: "app:list-tasks",
+  onDataChanged: "app:data-changed",
+  restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
   updateTaskStatus: "app:update-task-status",
   updateProjectProfile: "app:update-project-profile"
@@ -35,8 +45,17 @@ const channels = {
 
 export function registerDesktopApi(runtime: PreloadRuntime): void {
   const desktopApi: DesktopApi = {
-    appendPlanNote(input: AppendPlanNoteInput) {
-      return runtime.ipcRenderer.invoke(channels.appendPlanNote, input);
+    answerPlanQuestion(input: AnswerPlanQuestionInput) {
+      return runtime.ipcRenderer.invoke(channels.answerPlanQuestion, input);
+    },
+    appendPlanExtension(input: AppendPlanExtensionInput) {
+      return runtime.ipcRenderer.invoke(channels.appendPlanExtension, input);
+    },
+    appendPlanImprovement(input: AppendPlanImprovementInput) {
+      return runtime.ipcRenderer.invoke(channels.appendPlanImprovement, input);
+    },
+    consolidatePlanDiscussion(input: ConsolidatePlanDiscussionInput) {
+      return runtime.ipcRenderer.invoke(channels.consolidatePlanDiscussion, input);
     },
     createProject(input: CreateProjectInput) {
       return runtime.ipcRenderer.invoke(channels.createProject, input);
@@ -61,6 +80,31 @@ export function registerDesktopApi(runtime: PreloadRuntime): void {
     },
     listTasks() {
       return runtime.ipcRenderer.invoke(channels.listTasks);
+    },
+    onDataChanged(listener: (event: DesktopDataChangeEvent) => void) {
+      const subscription = (_event: unknown, payload: DesktopDataChangeEvent) => {
+        listener(payload);
+      };
+
+      runtime.ipcRenderer.on(channels.onDataChanged, subscription);
+
+      return () => {
+        runtime.ipcRenderer.removeListener(channels.onDataChanged, subscription);
+      };
+    },
+    onFocusTask(listener: (taskId: string) => void) {
+      const subscription = (_event: unknown, taskId: string) => {
+        listener(taskId);
+      };
+
+      runtime.ipcRenderer.on("app:focus-task", subscription);
+
+      return () => {
+        runtime.ipcRenderer.removeListener("app:focus-task", subscription);
+      };
+    },
+    restorePlanRevision(input: RestorePlanRevisionInput) {
+      return runtime.ipcRenderer.invoke(channels.restorePlanRevision, input);
     },
     savePlan(input: SavePlanInput) {
       return runtime.ipcRenderer.invoke(channels.savePlan, input);

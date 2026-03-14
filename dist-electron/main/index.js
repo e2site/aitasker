@@ -44,6 +44,14 @@ var plansTable = sqliteTable("plans", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
 });
+var planRevisionsTable = sqliteTable("plan_revisions", {
+  id: text("id").primaryKey(),
+  planId: text("plan_id").notNull().references(() => plansTable.id, { onDelete: "cascade" }),
+  taskId: text("task_id").notNull().references(() => tasksTable.id, { onDelete: "cascade" }),
+  contentMd: text("content_md").notNull(),
+  source: text("source").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull()
+});
 var agentSessionsTable = sqliteTable("agent_sessions", {
   id: text("id").primaryKey(),
   taskId: text("task_id").notNull().unique().references(() => tasksTable.id, { onDelete: "cascade" }),
@@ -56,6 +64,7 @@ var agentSessionsTable = sqliteTable("agent_sessions", {
 });
 var databaseSchema = {
   agentSessionsTable,
+  planRevisionsTable,
   plansTable,
   projectsTable,
   tasksTable
@@ -167,6 +176,17 @@ function bootstrapDatabase(sqlite) {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS plan_revisions (
+      id TEXT PRIMARY KEY NOT NULL,
+      plan_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      content_md TEXT NOT NULL,
+      source TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS agent_sessions (
       id TEXT PRIMARY KEY NOT NULL,
       task_id TEXT NOT NULL UNIQUE,
@@ -256,6 +276,8 @@ function bootstrapDatabase(sqlite) {
   ).run();
   sqlite.exec(`
     CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_revisions_task_id ON plan_revisions(task_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_revisions_plan_id ON plan_revisions(plan_id);
   `);
 }
 
@@ -276,7 +298,7 @@ function createAppDatabase(userDataPath) {
 
 // src/main/db/plan-repository.ts
 import { randomUUID as randomUUID2 } from "crypto";
-import { eq as eq2 } from "drizzle-orm";
+import { desc, eq as eq2 } from "drizzle-orm";
 function toPlanRecord(row) {
   return {
     id: row.id,
@@ -287,6 +309,32 @@ function toPlanRecord(row) {
     updatedAt: row.updatedAt.toISOString()
   };
 }
+function toPlanRevisionRecord(row) {
+  return {
+    id: row.id,
+    planId: row.planId,
+    taskId: row.taskId,
+    contentMd: row.contentMd,
+    source: row.source,
+    createdAt: row.createdAt.toISOString()
+  };
+}
+async function insertRevision(database, plan) {
+  const revisionId = randomUUID2();
+  database.insert(planRevisionsTable).values({
+    id: revisionId,
+    planId: plan.id,
+    taskId: plan.taskId,
+    contentMd: plan.contentMd,
+    source: plan.source,
+    createdAt: /* @__PURE__ */ new Date()
+  }).run();
+  const createdRevision = database.select().from(planRevisionsTable).where(eq2(planRevisionsTable.id, revisionId)).get();
+  if (!createdRevision) {
+    throw new Error("\u0420\u0435\u0432\u0438\u0437\u0438\u044F \u043F\u043B\u0430\u043D\u0430 \u0441\u043E\u0437\u0434\u0430\u043D\u0430, \u043D\u043E \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0442\u044C \u0435\u0435 \u0438\u0437 \u0431\u0430\u0437\u044B.");
+  }
+  return toPlanRevisionRecord(createdRevision);
+}
 var PlanRepository = class {
   constructor(database) {
     this.database = database;
@@ -295,10 +343,42 @@ var PlanRepository = class {
     const row = this.database.select().from(plansTable).where(eq2(plansTable.taskId, taskId)).get();
     return row ? toPlanRecord(row) : null;
   }
+  async getRevisionById(revisionId) {
+    const row = this.database.select().from(planRevisionsTable).where(eq2(planRevisionsTable.id, revisionId)).get();
+    return row ? toPlanRevisionRecord(row) : null;
+  }
+  async listRevisions(taskId) {
+    const rows = this.database.select().from(planRevisionsTable).where(eq2(planRevisionsTable.taskId, taskId)).orderBy(desc(planRevisionsTable.createdAt)).all();
+    return rows.map(toPlanRevisionRecord);
+  }
+  async restoreRevision(input) {
+    const revision = await this.getRevisionById(input.revisionId);
+    if (!revision || revision.taskId !== input.taskId) {
+      throw new Error(`\u0420\u0435\u0432\u0438\u0437\u0438\u044F ${input.revisionId} \u0434\u043B\u044F \u0437\u0430\u0434\u0430\u0447\u0438 ${input.taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430.`);
+    }
+    const existing = this.database.select().from(plansTable).where(eq2(plansTable.taskId, input.taskId)).get();
+    if (!existing) {
+      throw new Error(`\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u043F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 ${input.taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
+    }
+    this.database.update(plansTable).set({
+      contentMd: revision.contentMd,
+      source: revision.source,
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq2(plansTable.taskId, input.taskId)).run();
+    const restored = await this.getByTaskId(input.taskId);
+    if (!restored) {
+      throw new Error("\u041F\u043B\u0430\u043D \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D, \u043D\u043E \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0435\u0440\u0435\u0447\u0438\u0442\u0430\u0442\u044C \u0435\u0433\u043E \u0438\u0437 \u0431\u0430\u0437\u044B.");
+    }
+    return restored;
+  }
   async save(input) {
     const now = /* @__PURE__ */ new Date();
     const existing = this.database.select().from(plansTable).where(eq2(plansTable.taskId, input.taskId)).get();
     if (existing) {
+      const hasChanges = existing.contentMd !== input.contentMd || existing.source !== input.source;
+      if (hasChanges && input.createRevision) {
+        await insertRevision(this.database, existing);
+      }
       this.database.update(plansTable).set({
         contentMd: input.contentMd,
         source: input.source,
@@ -316,7 +396,7 @@ var PlanRepository = class {
     }
     const saved = await this.getByTaskId(input.taskId);
     if (!saved) {
-      throw new Error("Plan was saved but could not be reloaded from the database.");
+      throw new Error("\u041F\u043B\u0430\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D, \u043D\u043E \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0442\u044C \u0435\u0433\u043E \u0438\u0437 \u0431\u0430\u0437\u044B.");
     }
     return saved;
   }
@@ -324,7 +404,7 @@ var PlanRepository = class {
 
 // src/main/db/project-repository.ts
 import { randomUUID as randomUUID3 } from "crypto";
-import { desc, eq as eq3 } from "drizzle-orm";
+import { desc as desc2, eq as eq3 } from "drizzle-orm";
 function normalizeWhitespace(value) {
   return value.trim().replace(/\s+/g, " ");
 }
@@ -408,7 +488,7 @@ var ProjectRepository = class {
     return row ? toProjectRecord(row) : null;
   }
   async list() {
-    const rows = this.database.select().from(projectsTable).orderBy(desc(projectsTable.updatedAt), desc(projectsTable.createdAt)).all();
+    const rows = this.database.select().from(projectsTable).orderBy(desc2(projectsTable.updatedAt), desc2(projectsTable.createdAt)).all();
     return rows.map(toProjectRecord);
   }
   async touch(projectId) {
@@ -447,7 +527,7 @@ var ProjectRepository = class {
 
 // src/main/db/task-repository.ts
 import { randomUUID as randomUUID4 } from "crypto";
-import { and, desc as desc2, eq as eq4 } from "drizzle-orm";
+import { and, desc as desc3, eq as eq4 } from "drizzle-orm";
 function normalizeTaskStatus(status) {
   switch (status) {
     case "draft":
@@ -458,6 +538,7 @@ function normalizeTaskStatus(status) {
       return "new";
     case "new":
     case "planning":
+    case "requires_clarification":
     case "implementation":
     case "completed":
       return status;
@@ -528,7 +609,7 @@ var TaskRepository = class {
       status: tasksTable.status,
       createdAt: tasksTable.createdAt,
       updatedAt: tasksTable.updatedAt
-    }).from(tasksTable).innerJoin(projectsTable, eq4(tasksTable.projectId, projectsTable.id)).where(projectId ? eq4(tasksTable.projectId, projectId) : void 0).orderBy(desc2(tasksTable.updatedAt)).all();
+    }).from(tasksTable).innerJoin(projectsTable, eq4(tasksTable.projectId, projectsTable.id)).where(projectId ? eq4(tasksTable.projectId, projectId) : void 0).orderBy(desc3(tasksTable.updatedAt)).all();
     return rows.map(toTaskRecord);
   }
   async touch(taskId) {
@@ -547,8 +628,15 @@ var TaskRepository = class {
 // src/shared/contracts/desktop-api.ts
 import { z } from "zod";
 var agentProviderIdSchema = z.enum(["mcp"]);
-var taskStatusSchema = z.enum(["new", "planning", "implementation", "completed"]);
+var taskStatusSchema = z.enum([
+  "new",
+  "planning",
+  "requires_clarification",
+  "implementation",
+  "completed"
+]);
 var planSourceSchema = z.enum(["human", "agent"]);
+var planDiscussionAuthorSchema = z.enum(["human", "agent"]);
 var agentSessionStatusSchema = z.enum(["idle", "running", "completed", "failed"]);
 var projectRecordSchema = z.object({
   id: z.string(),
@@ -580,6 +668,14 @@ var planRecordSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string()
 });
+var planRevisionRecordSchema = z.object({
+  id: z.string(),
+  planId: z.string(),
+  taskId: z.string(),
+  contentMd: z.string(),
+  source: planSourceSchema,
+  createdAt: z.string()
+});
 var agentSessionRecordSchema = z.object({
   id: z.string(),
   taskId: z.string(),
@@ -594,6 +690,7 @@ var taskDetailSchema = z.object({
   project: projectRecordSchema,
   task: taskRecordSchema,
   plan: planRecordSchema.nullable(),
+  planRevisions: z.array(planRevisionRecordSchema),
   agentSession: agentSessionRecordSchema.nullable()
 });
 var appHealthSnapshotSchema = z.object({
@@ -644,11 +741,29 @@ var updateProjectProfileInputSchema = z.object({
 var savePlanInputSchema = z.object({
   taskId: z.string(),
   contentMd: z.string().trim().min(1, "\u041F\u043B\u0430\u043D \u043D\u0435 \u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043F\u0443\u0441\u0442\u044B\u043C."),
+  openQuestions: z.array(z.string().trim().min(1).max(4e3)).max(50).optional(),
   source: planSourceSchema.default("human")
 });
-var appendPlanNoteInputSchema = z.object({
+var appendPlanExtensionInputSchema = z.object({
   taskId: z.string(),
-  note: z.string().trim().min(1).max(4e3)
+  content: z.string().trim().min(1).max(4e3),
+  author: planDiscussionAuthorSchema.default("human")
+});
+var appendPlanImprovementInputSchema = z.object({
+  taskId: z.string(),
+  content: z.string().trim().min(1).max(4e3),
+  author: planDiscussionAuthorSchema.default("human")
+});
+var consolidatePlanDiscussionInputSchema = z.object({
+  taskId: z.string(),
+  contentMd: z.string().trim().min(1, "\u041F\u043B\u0430\u043D \u043D\u0435 \u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043F\u0443\u0441\u0442\u044B\u043C."),
+  openQuestions: z.array(z.string().trim().min(1).max(4e3)).max(50).optional(),
+  source: planSourceSchema.default("agent")
+});
+var answerPlanQuestionInputSchema = z.object({
+  taskId: z.string(),
+  questionId: z.string(),
+  answer: z.string().trim().min(1).max(4e3)
 });
 var deleteTaskResultSchema = z.object({
   deletedTaskId: z.string()
@@ -657,9 +772,432 @@ var updateTaskStatusInputSchema = z.object({
   taskId: z.string(),
   status: taskStatusSchema
 });
+var restorePlanRevisionInputSchema = z.object({
+  revisionId: z.string(),
+  taskId: z.string()
+});
+var desktopDataChangeEventSchema = z.object({
+  projectId: z.string().nullable(),
+  reason: z.enum([
+    "append-plan-extension",
+    "append-plan-improvement",
+    "answer-plan-question",
+    "consolidate-plan-discussion",
+    "create-project",
+    "create-task",
+    "delete-task",
+    "restore-plan-revision",
+    "save-plan",
+    "update-project-profile",
+    "update-task-status"
+  ]),
+  taskId: z.string().nullable()
+});
+
+// src/shared/plans/managed-plan-content.ts
+var EXTENSIONS_MARKER_START = "aitasker:plan-extensions:start";
+var EXTENSIONS_MARKER_END = "aitasker:plan-extensions:end";
+var IMPROVEMENTS_MARKER_START = "aitasker:plan-improvements:start";
+var IMPROVEMENTS_MARKER_END = "aitasker:plan-improvements:end";
+var DISCUSSION_MARKER_START = "aitasker:plan-discussion:start";
+var DISCUSSION_MARKER_END = "aitasker:plan-discussion:end";
+var QUESTIONS_MARKER_START = "aitasker:plan-questions:start";
+var QUESTIONS_MARKER_END = "aitasker:plan-questions:end";
+var LEGACY_EXTENSIONS_MARKER_START = "<!-- aitasker:plan-extensions:start -->";
+var LEGACY_EXTENSIONS_MARKER_END = "<!-- aitasker:plan-extensions:end -->";
+var LEGACY_IMPROVEMENTS_MARKER_START = "<!-- aitasker:plan-improvements:start -->";
+var LEGACY_IMPROVEMENTS_MARKER_END = "<!-- aitasker:plan-improvements:end -->";
+var EXTENSIONS_TITLE = "\u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F \u043F\u043B\u0430\u043D\u0430";
+var IMPROVEMENTS_TITLE = "\u0414\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0438";
+var DISCUSSION_TITLE = "\u041E\u0431\u0441\u0443\u0436\u0434\u0435\u043D\u0438\u0435";
+var QUESTIONS_TITLE = "\u041E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B";
+var LEGACY_NOTES_TITLE = "\u0417\u0430\u043C\u0435\u0442\u043A\u0438";
+var hiddenSectionConfigByKind = {
+  discussion: {
+    endMarker: DISCUSSION_MARKER_END,
+    startMarker: DISCUSSION_MARKER_START,
+    title: DISCUSSION_TITLE
+  },
+  extension: {
+    endMarker: EXTENSIONS_MARKER_END,
+    startMarker: EXTENSIONS_MARKER_START,
+    title: EXTENSIONS_TITLE
+  },
+  improvement: {
+    endMarker: IMPROVEMENTS_MARKER_END,
+    startMarker: IMPROVEMENTS_MARKER_START,
+    title: IMPROVEMENTS_TITLE
+  }
+};
+var legacyVisibleSectionConfigByKind = {
+  extension: {
+    endMarker: LEGACY_EXTENSIONS_MARKER_END,
+    startMarker: LEGACY_EXTENSIONS_MARKER_START,
+    title: EXTENSIONS_TITLE
+  },
+  improvement: {
+    endMarker: LEGACY_IMPROVEMENTS_MARKER_END,
+    startMarker: LEGACY_IMPROVEMENTS_MARKER_START,
+    title: IMPROVEMENTS_TITLE
+  }
+};
+function normalizeMarkdown(text2) {
+  return text2.replace(/\r\n?/g, "\n").trim();
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function createManagedEntityId(prefix) {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+function formatManagedPlanComment(comment) {
+  return {
+    author: comment.author === "agent" ? "agent" : "human",
+    content: normalizeMarkdown(comment.content ?? ""),
+    createdAt: comment.createdAt?.trim() || null,
+    id: comment.id?.trim() || createManagedEntityId("comment")
+  };
+}
+function formatManagedPlanQuestion(question) {
+  return {
+    content: normalizeMarkdown(question.content ?? ""),
+    createdAt: question.createdAt?.trim() || null,
+    id: question.id?.trim() || createManagedEntityId("question")
+  };
+}
+function parseLegacyItems(body) {
+  const normalizedBody = normalizeMarkdown(body);
+  if (!normalizedBody) {
+    return [];
+  }
+  const lines = normalizedBody.split("\n");
+  const items = [];
+  let current = [];
+  for (const line of lines) {
+    if (line.startsWith("- ")) {
+      if (current.length > 0) {
+        items.push(current.join("\n").trim());
+      }
+      current = [line.slice(2)];
+      continue;
+    }
+    if (current.length === 0) {
+      current = [line];
+      continue;
+    }
+    current.push(line.startsWith("  ") ? line.slice(2) : line);
+  }
+  if (current.length > 0) {
+    items.push(current.join("\n").trim());
+  }
+  return items.filter(Boolean).map(
+    (content) => formatManagedPlanComment({
+      author: "human",
+      content,
+      createdAt: null
+    })
+  );
+}
+function formatHiddenSection(config, values) {
+  if (values.length === 0) {
+    return "";
+  }
+  return `<!-- ${config.startMarker}
+${JSON.stringify(values, null, 2)}
+${config.endMarker} -->`;
+}
+function extractHiddenCommentSection(contentMd, config) {
+  const pattern = new RegExp(
+    `<!-- ${escapeRegExp(config.startMarker)}\\s*\\n([\\s\\S]*?)\\n${escapeRegExp(config.endMarker)} -->`,
+    "m"
+  );
+  const match = contentMd.match(pattern);
+  if (!match) {
+    return {
+      comments: [],
+      contentMd
+    };
+  }
+  try {
+    const parsed = JSON.parse(match[1] ?? "[]");
+    const comments = Array.isArray(parsed) ? parsed.map((comment) => formatManagedPlanComment(comment)).filter((comment) => Boolean(comment.content)) : [];
+    return {
+      comments,
+      contentMd: normalizeMarkdown(contentMd.replace(match[0], ""))
+    };
+  } catch {
+    return {
+      comments: [],
+      contentMd: normalizeMarkdown(contentMd.replace(match[0], ""))
+    };
+  }
+}
+function extractHiddenQuestionSection(contentMd) {
+  const pattern = new RegExp(
+    `<!-- ${escapeRegExp(QUESTIONS_MARKER_START)}\\s*\\n([\\s\\S]*?)\\n${escapeRegExp(QUESTIONS_MARKER_END)} -->`,
+    "m"
+  );
+  const match = contentMd.match(pattern);
+  if (!match) {
+    return {
+      contentMd,
+      questions: []
+    };
+  }
+  try {
+    const parsed = JSON.parse(match[1] ?? "[]");
+    const questions = Array.isArray(parsed) ? parsed.map((question) => formatManagedPlanQuestion(question)).filter((question) => Boolean(question.content)) : [];
+    return {
+      contentMd: normalizeMarkdown(contentMd.replace(match[0], "")),
+      questions
+    };
+  } catch {
+    return {
+      contentMd: normalizeMarkdown(contentMd.replace(match[0], "")),
+      questions: []
+    };
+  }
+}
+function extractLegacyVisibleSection(contentMd, config) {
+  const pattern = new RegExp(
+    `${escapeRegExp(config.startMarker)}\\s*\\n## ${escapeRegExp(config.title)}\\s*\\n([\\s\\S]*?)\\n${escapeRegExp(config.endMarker)}`,
+    "m"
+  );
+  const match = contentMd.match(pattern);
+  if (!match) {
+    return {
+      comments: [],
+      contentMd
+    };
+  }
+  return {
+    comments: parseLegacyItems(match[1] ?? ""),
+    contentMd: normalizeMarkdown(contentMd.replace(match[0], ""))
+  };
+}
+function extractLegacyNotesSection(contentMd) {
+  const pattern = new RegExp(`(?:^|\\n)## ${escapeRegExp(LEGACY_NOTES_TITLE)}\\s*\\n([\\s\\S]*)$`, "m");
+  const match = contentMd.match(pattern);
+  if (!match) {
+    return {
+      comments: [],
+      contentMd
+    };
+  }
+  return {
+    comments: parseLegacyItems(match[1] ?? ""),
+    contentMd: normalizeMarkdown(contentMd.slice(0, match.index).trim())
+  };
+}
+function formatCommentTimestamp(createdAt) {
+  if (!createdAt) {
+    return "\u0431\u0435\u0437 \u0432\u0440\u0435\u043C\u0435\u043D\u0438";
+  }
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) {
+    return "\u0431\u0435\u0437 \u0432\u0440\u0435\u043C\u0435\u043D\u0438";
+  }
+  return date.toLocaleString("ru-RU", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short"
+  });
+}
+function getAuthorLabel(author) {
+  return author === "agent" ? "AI \u0430\u0433\u0435\u043D\u0442" : "\u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C";
+}
+function formatRenderedCommentSection(title, comments) {
+  if (comments.length === 0) {
+    return "";
+  }
+  return [
+    `## ${title}`,
+    comments.map(
+      (comment) => [`### ${getAuthorLabel(comment.author)} \xB7 ${formatCommentTimestamp(comment.createdAt)}`, comment.content].join(
+        "\n\n"
+      )
+    ).join("\n\n")
+  ].join("\n\n");
+}
+function formatRenderedQuestionSection(questions) {
+  if (questions.length === 0) {
+    return "";
+  }
+  return [
+    `## ${QUESTIONS_TITLE}`,
+    questions.map((question) => `- ${question.content}`).join("\n")
+  ].join("\n\n");
+}
+function stripRenderedDiscussionSections(contentMd) {
+  const normalizedContent = normalizeMarkdown(contentMd);
+  const sectionsPattern = new RegExp(
+    `(?:\\n|^)## ${escapeRegExp(EXTENSIONS_TITLE)}\\s*\\n[\\s\\S]*$|(?:\\n|^)## ${escapeRegExp(IMPROVEMENTS_TITLE)}\\s*\\n[\\s\\S]*$|(?:\\n|^)## ${escapeRegExp(DISCUSSION_TITLE)}\\s*\\n[\\s\\S]*$|(?:\\n|^)## ${escapeRegExp(QUESTIONS_TITLE)}\\s*\\n[\\s\\S]*$`,
+    "m"
+  );
+  return normalizeMarkdown(normalizedContent.replace(sectionsPattern, ""));
+}
+function composeManagedPlanContent(baseContentMd, extensions, improvements, discussion, questions) {
+  const parts = [
+    normalizeMarkdown(baseContentMd),
+    formatHiddenSection(hiddenSectionConfigByKind.extension, extensions),
+    formatHiddenSection(hiddenSectionConfigByKind.improvement, improvements),
+    formatHiddenSection(hiddenSectionConfigByKind.discussion, discussion),
+    formatHiddenSection({ endMarker: QUESTIONS_MARKER_END, startMarker: QUESTIONS_MARKER_START, title: QUESTIONS_TITLE }, questions)
+  ].filter(Boolean);
+  return parts.join("\n\n").trim();
+}
+function parseManagedPlanContent(contentMd) {
+  const normalizedContent = normalizeMarkdown(contentMd);
+  const extractedExtensionsHidden = extractHiddenCommentSection(normalizedContent, hiddenSectionConfigByKind.extension);
+  const extractedImprovementsHidden = extractHiddenCommentSection(
+    extractedExtensionsHidden.contentMd,
+    hiddenSectionConfigByKind.improvement
+  );
+  const extractedDiscussionHidden = extractHiddenCommentSection(
+    extractedImprovementsHidden.contentMd,
+    hiddenSectionConfigByKind.discussion
+  );
+  const extractedQuestionsHidden = extractHiddenQuestionSection(extractedDiscussionHidden.contentMd);
+  const extractedExtensionsVisible = extractedExtensionsHidden.comments.length ? { comments: [], contentMd: extractedQuestionsHidden.contentMd } : extractLegacyVisibleSection(extractedQuestionsHidden.contentMd, legacyVisibleSectionConfigByKind.extension);
+  const extractedImprovementsVisible = extractedImprovementsHidden.comments.length ? { comments: [], contentMd: extractedExtensionsVisible.contentMd } : extractLegacyVisibleSection(extractedExtensionsVisible.contentMd, legacyVisibleSectionConfigByKind.improvement);
+  const legacyNotes = extractedExtensionsHidden.comments.length || extractedExtensionsVisible.comments.length ? { comments: [], contentMd: extractedImprovementsVisible.contentMd } : extractLegacyNotesSection(extractedImprovementsVisible.contentMd);
+  const baseContentMd = normalizeMarkdown(legacyNotes.contentMd);
+  const extensions = [
+    ...extractedExtensionsHidden.comments,
+    ...extractedExtensionsVisible.comments,
+    ...legacyNotes.comments
+  ];
+  const improvements = [...extractedImprovementsHidden.comments, ...extractedImprovementsVisible.comments];
+  const discussion = extractedDiscussionHidden.comments;
+  const questions = extractedQuestionsHidden.questions;
+  return {
+    baseContentMd,
+    discussion,
+    extensions,
+    improvements,
+    questions,
+    renderedContentMd: [
+      baseContentMd,
+      formatRenderedCommentSection(EXTENSIONS_TITLE, extensions),
+      formatRenderedCommentSection(IMPROVEMENTS_TITLE, improvements),
+      formatRenderedCommentSection(DISCUSSION_TITLE, discussion),
+      formatRenderedQuestionSection(questions)
+    ].filter(Boolean).join("\n\n").trim()
+  };
+}
+function appendManagedPlanBlock(contentMd, kind, value, author) {
+  const parsed = parseManagedPlanContent(contentMd);
+  const normalizedValue = normalizeMarkdown(value);
+  if (!normalizedValue) {
+    return composeManagedPlanContent(
+      parsed.baseContentMd,
+      parsed.extensions,
+      parsed.improvements,
+      parsed.discussion,
+      parsed.questions
+    );
+  }
+  const nextComment = formatManagedPlanComment({
+    author,
+    content: normalizedValue,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  return composeManagedPlanContent(
+    parsed.baseContentMd,
+    kind === "extension" ? [...parsed.extensions, nextComment] : parsed.extensions,
+    kind === "improvement" ? [...parsed.improvements, nextComment] : parsed.improvements,
+    kind === "discussion" ? [...parsed.discussion, nextComment] : parsed.discussion,
+    parsed.questions
+  );
+}
+function replaceBasePlanContent(contentMd, nextBaseContentMd) {
+  const parsed = parseManagedPlanContent(contentMd);
+  return composeManagedPlanContent(
+    nextBaseContentMd,
+    parsed.extensions,
+    parsed.improvements,
+    parsed.discussion,
+    parsed.questions
+  );
+}
+function replaceManagedPlanQuestions(contentMd, nextQuestions) {
+  const parsed = parseManagedPlanContent(contentMd);
+  const questions = nextQuestions.map(
+    (question) => formatManagedPlanQuestion({
+      content: question,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    })
+  ).filter((question) => Boolean(question.content));
+  return composeManagedPlanContent(
+    parsed.baseContentMd,
+    parsed.extensions,
+    parsed.improvements,
+    parsed.discussion,
+    questions
+  );
+}
+function answerManagedPlanQuestion(contentMd, questionId, answer) {
+  const parsed = parseManagedPlanContent(contentMd);
+  const question = parsed.questions.find((item) => item.id === questionId);
+  const normalizedAnswer = normalizeMarkdown(answer);
+  if (!question || !normalizedAnswer) {
+    return composeManagedPlanContent(
+      parsed.baseContentMd,
+      parsed.extensions,
+      parsed.improvements,
+      parsed.discussion,
+      parsed.questions
+    );
+  }
+  return composeManagedPlanContent(
+    parsed.baseContentMd,
+    parsed.extensions,
+    parsed.improvements,
+    [
+      ...parsed.discussion,
+      formatManagedPlanComment({
+        author: "agent",
+        content: `**\u0412\u043E\u043F\u0440\u043E\u0441:** ${question.content}`,
+        createdAt: question.createdAt
+      }),
+      formatManagedPlanComment({
+        author: "human",
+        content: `**\u041E\u0442\u0432\u0435\u0442:** ${normalizedAnswer}`,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      })
+    ],
+    parsed.questions.filter((item) => item.id !== questionId)
+  );
+}
+function consolidateManagedPlanDiscussion(contentMd, nextBaseContentMd, nextQuestions) {
+  const parsed = parseManagedPlanContent(contentMd);
+  const questions = nextQuestions === void 0 ? parsed.questions : nextQuestions.map(
+    (question) => formatManagedPlanQuestion({
+      content: question,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    })
+  ).filter((question) => Boolean(question.content));
+  return composeManagedPlanContent(nextBaseContentMd, [], [], [], questions);
+}
+function extractBasePlanContent(contentMd) {
+  const parsed = parseManagedPlanContent(contentMd);
+  return stripRenderedDiscussionSections(parsed.baseContentMd);
+}
+function findManagedPlanComment(contentMd, kind, commentId) {
+  const parsed = parseManagedPlanContent(contentMd);
+  const comments = kind === "extension" ? parsed.extensions : kind === "improvement" ? parsed.improvements : parsed.discussion;
+  return comments.find((comment) => comment.id === commentId) ?? null;
+}
 
 // src/main/services/app-service.ts
 function createAppService(dependencies) {
+  const emitDataChanged = (event) => {
+    dependencies.onDataChanged?.(event);
+  };
   const getTaskDetail = async (taskId, projectId) => {
     const task = await dependencies.taskRepository.getById(taskId, projectId);
     if (!task) {
@@ -669,14 +1207,16 @@ function createAppService(dependencies) {
     if (!project) {
       throw new Error(`Project ${task.projectId} was not found.`);
     }
-    const [plan, agentSession] = await Promise.all([
+    const [plan, planRevisions, agentSession] = await Promise.all([
       dependencies.planRepository.getByTaskId(taskId),
+      dependencies.planRepository.listRevisions(taskId),
       dependencies.agentSessionRepository.getByTaskId(taskId)
     ]);
     return {
       project,
       task,
       plan,
+      planRevisions,
       agentSession
     };
   };
@@ -694,41 +1234,118 @@ function createAppService(dependencies) {
     throw new Error("Project id or project name is required.");
   };
   return {
-    async appendPlanNote(input) {
-      const parsedInput = appendPlanNoteInputSchema.parse(input);
+    async answerPlanQuestion(input) {
+      const parsedInput = answerPlanQuestionInputSchema.parse(input);
       const detail = await getTaskDetail(parsedInput.taskId);
-      const currentPlan = detail.plan?.contentMd || `# \u041F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438
-
-## \u0426\u0435\u043B\u044C
-...
-
-## \u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442
-...
-
-## \u0428\u0430\u0433\u0438
-1. ...
-
-## \u041E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B
-- ...
-
-## \u041A\u0440\u0438\u0442\u0435\u0440\u0438\u0438 \u0433\u043E\u0442\u043E\u0432\u043D\u043E\u0441\u0442\u0438
-- ...`;
-      const nextContent = `${currentPlan.trim()}
-
-## \u0417\u0430\u043C\u0435\u0442\u043A\u0438
-- ${parsedInput.note.trim()}`;
+      if (!detail.plan) {
+        throw new Error("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0437\u0434\u0430\u0439\u0442\u0435 \u0438\u043B\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0431\u0430\u0437\u043E\u0432\u044B\u0439 \u043F\u043B\u0430\u043D, \u0437\u0430\u0442\u0435\u043C \u043E\u0442\u0432\u0435\u0447\u0430\u0439\u0442\u0435 \u043D\u0430 \u0432\u043E\u043F\u0440\u043E\u0441\u044B.");
+      }
       await dependencies.planRepository.save({
         taskId: parsedInput.taskId,
-        contentMd: nextContent,
-        source: "agent"
+        contentMd: answerManagedPlanQuestion(detail.plan.contentMd, parsedInput.questionId, parsedInput.answer),
+        source: detail.plan.source
       });
       await dependencies.taskRepository.touch(parsedInput.taskId);
       await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "answer-plan-question",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
+      return getTaskDetail(parsedInput.taskId);
+    },
+    async appendPlanExtension(input) {
+      const parsedInput = appendPlanExtensionInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.taskId);
+      if (!detail.plan) {
+        throw new Error("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0437\u0434\u0430\u0439\u0442\u0435 \u0438\u043B\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0431\u0430\u0437\u043E\u0432\u044B\u0439 \u043F\u043B\u0430\u043D, \u0437\u0430\u0442\u0435\u043C \u0434\u043E\u0431\u0430\u0432\u043B\u044F\u0439\u0442\u0435 \u0435\u0433\u043E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F.");
+      }
+      await dependencies.planRepository.save({
+        taskId: parsedInput.taskId,
+        contentMd: appendManagedPlanBlock(
+          detail.plan.contentMd,
+          "extension",
+          parsedInput.content,
+          parsedInput.author
+        ),
+        source: detail.plan.source
+      });
+      await dependencies.taskRepository.touch(parsedInput.taskId);
+      await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "append-plan-extension",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
+      return getTaskDetail(parsedInput.taskId);
+    },
+    async appendPlanImprovement(input) {
+      const parsedInput = appendPlanImprovementInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.taskId);
+      if (!detail.plan) {
+        throw new Error("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0437\u0434\u0430\u0439\u0442\u0435 \u0438\u043B\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0431\u0430\u0437\u043E\u0432\u044B\u0439 \u043F\u043B\u0430\u043D, \u0437\u0430\u0442\u0435\u043C \u0434\u043E\u0431\u0430\u0432\u043B\u044F\u0439\u0442\u0435 \u0435\u0433\u043E \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0438.");
+      }
+      await dependencies.planRepository.save({
+        taskId: parsedInput.taskId,
+        contentMd: appendManagedPlanBlock(
+          detail.plan.contentMd,
+          "improvement",
+          parsedInput.content,
+          parsedInput.author
+        ),
+        source: detail.plan.source
+      });
+      await dependencies.taskRepository.touch(parsedInput.taskId);
+      await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "append-plan-improvement",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
+      return getTaskDetail(parsedInput.taskId);
+    },
+    async consolidatePlanDiscussion(input) {
+      const parsedInput = consolidatePlanDiscussionInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.taskId);
+      const currentPlanContent = detail.plan?.contentMd ?? "";
+      const nextBaseContentMd = extractBasePlanContent(parsedInput.contentMd);
+      const finalContentMd = consolidateManagedPlanDiscussion(
+        currentPlanContent,
+        nextBaseContentMd,
+        parsedInput.openQuestions
+      );
+      await dependencies.planRepository.save({
+        taskId: parsedInput.taskId,
+        contentMd: finalContentMd,
+        createRevision: parsedInput.source === "agent",
+        source: parsedInput.source
+      });
+      await dependencies.projectRepository.touch(detail.task.projectId);
+      if (parsedInput.source === "agent") {
+        await dependencies.agentSessionRepository.upsert({
+          provider: "mcp",
+          status: "completed",
+          taskId: parsedInput.taskId,
+          externalSessionId: null,
+          externalThreadId: null
+        });
+      }
+      emitDataChanged({
+        reason: "consolidate-plan-discussion",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
       return getTaskDetail(parsedInput.taskId);
     },
     async createProject(input) {
       const parsedInput = createProjectInputSchema.parse(input);
-      return dependencies.projectRepository.create(parsedInput);
+      const project = await dependencies.projectRepository.create(parsedInput);
+      emitDataChanged({
+        reason: "create-project",
+        projectId: project.id,
+        taskId: null
+      });
+      return project;
     },
     async createTask(input) {
       const parsedInput = createTaskInputSchema.parse(input);
@@ -739,6 +1356,11 @@ function createAppService(dependencies) {
         title: parsedInput.title
       });
       await dependencies.projectRepository.touch(project.id);
+      emitDataChanged({
+        reason: "create-task",
+        projectId: project.id,
+        taskId: task.id
+      });
       return getTaskDetail(task.id);
     },
     async deleteTask(taskId) {
@@ -750,6 +1372,11 @@ function createAppService(dependencies) {
       if (!deleted) {
         throw new Error(`Task ${taskId} could not be deleted.`);
       }
+      emitDataChanged({
+        reason: "delete-task",
+        projectId: existingTask.projectId,
+        taskId
+      });
       return {
         deletedTaskId: taskId
       };
@@ -774,10 +1401,34 @@ function createAppService(dependencies) {
     listTasks(projectId) {
       return dependencies.taskRepository.list(projectId);
     },
+    async restorePlanRevision(input) {
+      const parsedInput = restorePlanRevisionInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.taskId);
+      await dependencies.planRepository.restoreRevision(parsedInput);
+      await dependencies.taskRepository.touch(parsedInput.taskId);
+      await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "restore-plan-revision",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
+      return getTaskDetail(parsedInput.taskId);
+    },
     async savePlan(input) {
       const parsedInput = savePlanInputSchema.parse(input);
       const detail = await getTaskDetail(parsedInput.taskId);
-      await dependencies.planRepository.save(parsedInput);
+      const currentPlanContent = detail.plan?.contentMd ?? "";
+      const nextBaseContentMd = extractBasePlanContent(parsedInput.contentMd);
+      const nextContentMd = replaceBasePlanContent(
+        currentPlanContent,
+        nextBaseContentMd
+      );
+      const finalContentMd = parsedInput.openQuestions === void 0 ? nextContentMd : replaceManagedPlanQuestions(nextContentMd, parsedInput.openQuestions);
+      await dependencies.planRepository.save({
+        ...parsedInput,
+        contentMd: finalContentMd,
+        createRevision: parsedInput.source === "agent"
+      });
       await dependencies.projectRepository.touch(detail.task.projectId);
       if (parsedInput.source === "agent") {
         await dependencies.agentSessionRepository.upsert({
@@ -788,6 +1439,11 @@ function createAppService(dependencies) {
           externalThreadId: null
         });
       }
+      emitDataChanged({
+        reason: "save-plan",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
       return getTaskDetail(parsedInput.taskId);
     },
     async updateTaskStatus(input) {
@@ -795,11 +1451,22 @@ function createAppService(dependencies) {
       const detail = await getTaskDetail(parsedInput.taskId);
       await dependencies.taskRepository.updateStatus(parsedInput.taskId, parsedInput.status);
       await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "update-task-status",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
       return getTaskDetail(parsedInput.taskId);
     },
     async updateProjectProfile(input) {
       const parsedInput = updateProjectProfileInputSchema.parse(input);
-      return dependencies.projectRepository.updateProfile(parsedInput);
+      const project = await dependencies.projectRepository.updateProfile(parsedInput);
+      emitDataChanged({
+        reason: "update-project-profile",
+        projectId: project.id,
+        taskId: null
+      });
+      return project;
     }
   };
 }
@@ -826,7 +1493,10 @@ function createDevLogger() {
 
 // src/main/ipc/register-ipc-handlers.ts
 var channels = {
-  appendPlanNote: "app:append-plan-note",
+  answerPlanQuestion: "app:answer-plan-question",
+  appendPlanExtension: "app:append-plan-extension",
+  appendPlanImprovement: "app:append-plan-improvement",
+  consolidatePlanDiscussion: "app:consolidate-plan-discussion",
   createProject: "app:create-project",
   createTask: "app:create-task",
   deleteTask: "app:delete-task",
@@ -835,6 +1505,7 @@ var channels = {
   getTaskDetail: "app:get-task-detail",
   listProjects: "app:list-projects",
   listTasks: "app:list-tasks",
+  restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
   updateTaskStatus: "app:update-task-status",
   updateProjectProfile: "app:update-project-profile"
@@ -872,12 +1543,28 @@ function registerIpcHandlers(ipcMain, appService) {
     (_event, taskId) => withIpcErrors(() => appService.deleteTask(taskId))
   );
   ipcMain.handle(
+    channels.restorePlanRevision,
+    (_event, input) => withIpcErrors(() => appService.restorePlanRevision(input))
+  );
+  ipcMain.handle(
     channels.savePlan,
     (_event, input) => withIpcErrors(() => appService.savePlan(input))
   );
   ipcMain.handle(
-    channels.appendPlanNote,
-    (_event, input) => withIpcErrors(() => appService.appendPlanNote(input))
+    channels.answerPlanQuestion,
+    (_event, input) => withIpcErrors(() => appService.answerPlanQuestion(input))
+  );
+  ipcMain.handle(
+    channels.appendPlanExtension,
+    (_event, input) => withIpcErrors(() => appService.appendPlanExtension(input))
+  );
+  ipcMain.handle(
+    channels.appendPlanImprovement,
+    (_event, input) => withIpcErrors(() => appService.appendPlanImprovement(input))
+  );
+  ipcMain.handle(
+    channels.consolidatePlanDiscussion,
+    (_event, input) => withIpcErrors(() => appService.consolidatePlanDiscussion(input))
   );
   ipcMain.handle(
     channels.updateTaskStatus,
@@ -902,7 +1589,13 @@ function textContent(text2) {
   return [{ type: "text", text: text2 }];
 }
 function ensureStructuredPlan(plan, taskId) {
-  return plan ?? { taskId, exists: false, contentMd: "" };
+  if (!plan) {
+    return { taskId, exists: false, contentMd: "" };
+  }
+  return {
+    ...plan,
+    contentMd: parseManagedPlanContent(plan.contentMd).renderedContentMd
+  };
 }
 function findProjectsByQuery(projects, query, limit) {
   const normalizedQuery = query.trim().toLocaleLowerCase("ru-RU");
@@ -1192,10 +1885,10 @@ function createMcpServer(appService, logger) {
   server.registerTool(
     "update_task_status",
     {
-      description: "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430. \u0414\u043E\u043F\u0443\u0441\u0442\u0438\u043C\u044B\u0435 \u0441\u0442\u0430\u0442\u0443\u0441\u044B: new, planning, implementation, completed.",
+      description: "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430. \u0414\u043E\u043F\u0443\u0441\u0442\u0438\u043C\u044B\u0435 \u0441\u0442\u0430\u0442\u0443\u0441\u044B: new, planning, requires_clarification, implementation, completed.",
       inputSchema: {
         taskId: z2.string(),
-        status: z2.enum(["new", "planning", "implementation", "completed"])
+        status: z2.enum(["new", "planning", "requires_clarification", "implementation", "completed"])
       }
     },
     async ({ status, taskId }) => {
@@ -1211,7 +1904,7 @@ function createMcpServer(appService, logger) {
   server.registerTool(
     "get_plan",
     {
-      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 Markdown-\u043F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 Markdown-\u043F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043C\u0435\u0441\u0442\u0435 \u0441 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F\u043C\u0438 \u0438 \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430\u043C\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
       inputSchema: {
         taskId: z2.string()
       }
@@ -1220,27 +1913,89 @@ function createMcpServer(appService, logger) {
       logger.debug("mcp", "Tool get_plan called", { taskId });
       const { detail } = await getScopedTaskDetail(taskId);
       return {
-        content: textContent(detail.plan?.contentMd ?? ""),
+        content: textContent(detail.plan ? parseManagedPlanContent(detail.plan.contentMd).renderedContentMd : ""),
         structuredContent: ensureStructuredPlan(detail.plan, taskId)
+      };
+    }
+  );
+  server.registerTool(
+    "get_plan_extension",
+    {
+      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043E\u0434\u043D\u043E \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E\u0435 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u043F\u043B\u0430\u043D\u0430 \u043F\u043E extensionId \u0431\u0435\u0437 \u0447\u0442\u0435\u043D\u0438\u044F \u0432\u0441\u0435\u0433\u043E \u043F\u043B\u0430\u043D\u0430.",
+      inputSchema: {
+        taskId: z2.string(),
+        extensionId: z2.string().min(1)
+      }
+    },
+    async ({ extensionId, taskId }) => {
+      logger.debug("mcp", "Tool get_plan_extension called", { taskId, extensionId });
+      const { detail } = await getScopedTaskDetail(taskId);
+      if (!detail.plan) {
+        throw new Error(`\u041F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 ${taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
+      }
+      const extension = findManagedPlanComment(detail.plan.contentMd, "extension", extensionId);
+      if (!extension) {
+        throw new Error(`\u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 ${extensionId} \u0434\u043B\u044F \u0437\u0430\u0434\u0430\u0447\u0438 ${taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E.`);
+      }
+      return {
+        content: textContent(extension.content),
+        structuredContent: {
+          extension,
+          taskId
+        }
+      };
+    }
+  );
+  server.registerTool(
+    "get_plan_improvement",
+    {
+      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043E\u0434\u043D\u0443 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u0443\u044E \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0443 \u043F\u043B\u0430\u043D\u0430 \u043F\u043E improvementId \u0431\u0435\u0437 \u0447\u0442\u0435\u043D\u0438\u044F \u0432\u0441\u0435\u0433\u043E \u043F\u043B\u0430\u043D\u0430.",
+      inputSchema: {
+        taskId: z2.string(),
+        improvementId: z2.string().min(1)
+      }
+    },
+    async ({ improvementId, taskId }) => {
+      logger.debug("mcp", "Tool get_plan_improvement called", { taskId, improvementId });
+      const { detail } = await getScopedTaskDetail(taskId);
+      if (!detail.plan) {
+        throw new Error(`\u041F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 ${taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
+      }
+      const improvement = findManagedPlanComment(detail.plan.contentMd, "improvement", improvementId);
+      if (!improvement) {
+        throw new Error(`\u0414\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430 ${improvementId} \u0434\u043B\u044F \u0437\u0430\u0434\u0430\u0447\u0438 ${taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430.`);
+      }
+      return {
+        content: textContent(improvement.content),
+        structuredContent: {
+          improvement,
+          taskId
+        }
       };
     }
   );
   server.registerTool(
     "save_plan",
     {
-      description: "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C Markdown-\u043F\u043B\u0430\u043D \u0434\u043B\u044F \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+      description: "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C Markdown-\u043F\u043B\u0430\u043D \u0438 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0445 \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u0434\u043B\u044F \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
       inputSchema: {
         taskId: z2.string(),
         contentMd: z2.string().min(1),
+        openQuestions: z2.array(z2.string().min(1)).optional(),
         source: z2.enum(["human", "agent"]).optional()
       }
     },
-    async ({ contentMd, source, taskId }) => {
+    async ({ contentMd, openQuestions, source, taskId }) => {
       await getScopedTaskDetail(taskId);
-      logger.info("mcp", "Tool save_plan called", { taskId, source: source ?? "agent" });
+      logger.info("mcp", "Tool save_plan called", {
+        taskId,
+        openQuestionsCount: openQuestions?.length ?? 0,
+        source: source ?? "agent"
+      });
       const detail = await appService.savePlan({
         taskId,
         contentMd,
+        openQuestions,
         source: source ?? "agent"
       });
       return {
@@ -1250,20 +2005,69 @@ function createMcpServer(appService, logger) {
     }
   );
   server.registerTool(
-    "append_plan_note",
+    "append_plan_extension",
     {
-      description: "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0437\u0430\u043C\u0435\u0442\u043A\u0443 \u0438\u043B\u0438 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0439 \u0432\u043E\u043F\u0440\u043E\u0441 \u0432 \u043F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+      description: "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u0442\u0435\u043A\u0443\u0449\u0435\u0433\u043E \u043F\u043B\u0430\u043D\u0430 \u0437\u0430\u0434\u0430\u0447\u0438 \u0431\u0435\u0437 \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u044F \u043D\u043E\u0432\u043E\u0439 \u0440\u0435\u0432\u0438\u0437\u0438\u0438.",
       inputSchema: {
         taskId: z2.string(),
-        note: z2.string().min(1)
+        content: z2.string().min(1)
       }
     },
-    async ({ note, taskId }) => {
+    async ({ content, taskId }) => {
       await getScopedTaskDetail(taskId);
-      logger.info("mcp", "Tool append_plan_note called", { taskId });
-      const detail = await appService.appendPlanNote({ taskId, note });
+      logger.info("mcp", "Tool append_plan_extension called", { taskId });
+      const detail = await appService.appendPlanExtension({ taskId, content, author: "agent" });
       return {
-        content: textContent("\u0417\u0430\u043C\u0435\u0442\u043A\u0430 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0430 \u0432 \u043F\u043B\u0430\u043D."),
+        content: textContent("\u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u043F\u043B\u0430\u043D\u0430 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E."),
+        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+      };
+    }
+  );
+  server.registerTool(
+    "append_plan_improvement",
+    {
+      description: "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0443 \u043F\u043B\u0430\u043D\u0430 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u0431\u043B\u043E\u043A\u043E\u043C \u0431\u0435\u0437 \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u044F \u043D\u043E\u0432\u043E\u0439 \u0440\u0435\u0432\u0438\u0437\u0438\u0438.",
+      inputSchema: {
+        taskId: z2.string(),
+        content: z2.string().min(1)
+      }
+    },
+    async ({ content, taskId }) => {
+      await getScopedTaskDetail(taskId);
+      logger.info("mcp", "Tool append_plan_improvement called", { taskId });
+      const detail = await appService.appendPlanImprovement({ taskId, content, author: "agent" });
+      return {
+        content: textContent("\u0414\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430 \u043F\u043B\u0430\u043D\u0430 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0430."),
+        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+      };
+    }
+  );
+  server.registerTool(
+    "consolidate_plan_discussion",
+    {
+      description: "\u0421\u0436\u0430\u0442\u044C \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443 \u043F\u043E \u043F\u043B\u0430\u043D\u0443 \u0432 \u043D\u043E\u0432\u044B\u0439 Markdown-\u043F\u043B\u0430\u043D, \u043F\u0440\u0438 \u043D\u0435\u043E\u0431\u0445\u043E\u0434\u0438\u043C\u043E\u0441\u0442\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u043D\u043E\u0432\u044B\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0445 \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u0438 \u043E\u0447\u0438\u0441\u0442\u0438\u0442\u044C \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0435 \u0431\u043B\u043E\u043A\u0438 \u043E\u0431\u0441\u0443\u0436\u0434\u0435\u043D\u0438\u044F.",
+      inputSchema: {
+        taskId: z2.string(),
+        contentMd: z2.string().min(1),
+        openQuestions: z2.array(z2.string().min(1)).optional(),
+        source: z2.enum(["human", "agent"]).optional()
+      }
+    },
+    async ({ contentMd, openQuestions, source, taskId }) => {
+      await getScopedTaskDetail(taskId);
+      logger.info("mcp", "Tool consolidate_plan_discussion called", {
+        taskId,
+        openQuestionsCount: openQuestions?.length ?? 0,
+        source: source ?? "agent"
+      });
+      const detail = await appService.consolidatePlanDiscussion({
+        taskId,
+        contentMd,
+        openQuestions,
+        source: source ?? "agent"
+      });
+      return {
+        content: textContent("\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430 \u043F\u043E \u043F\u043B\u0430\u043D\u0443 \u0441\u0436\u0430\u0442\u0430 \u0432 \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043F\u043B\u0430\u043D \u0438 \u043E\u0447\u0438\u0449\u0435\u043D\u0430 \u0438\u0437 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0445 \u0431\u043B\u043E\u043A\u043E\u0432."),
         structuredContent: ensureStructuredPlan(detail.plan, taskId)
       };
     }
@@ -1314,7 +2118,7 @@ function createMcpServer(appService, logger) {
 
 5. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0437\u0430\u0434\u0430\u0447\u0438.
 \u0412\u044B\u0437\u043E\u0432\u0438 get_task \u0441 \u0442\u043E\u0447\u043D\u044B\u043C task id.
-\u0415\u0441\u043B\u0438 \u0443 \u0437\u0430\u0434\u0430\u0447\u0438 \u0443\u0436\u0435 \u0435\u0441\u0442\u044C \u043F\u043B\u0430\u043D \u0438\u043B\u0438 \u0437\u0430\u043C\u0435\u0442\u043A\u0438, \u0442\u0430\u043A\u0436\u0435 \u0432\u044B\u0437\u043E\u0432\u0438 get_plan.
+\u0415\u0441\u043B\u0438 \u0443 \u0437\u0430\u0434\u0430\u0447\u0438 \u0443\u0436\u0435 \u0435\u0441\u0442\u044C \u043F\u043B\u0430\u043D, \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F \u0438\u043B\u0438 \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0438, \u0442\u0430\u043A\u0436\u0435 \u0432\u044B\u0437\u043E\u0432\u0438 get_plan.
 
 6. \u041F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u044C Markdown \u0432 \u0444\u043E\u0440\u043C\u0430\u0442\u0435:
 
@@ -1331,25 +2135,68 @@ function createMcpServer(appService, logger) {
 2. ...
 3. ...
 
-## \u041E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B
-- ...
-
 ## \u041A\u0440\u0438\u0442\u0435\u0440\u0438\u0438 \u0433\u043E\u0442\u043E\u0432\u043D\u043E\u0441\u0442\u0438
 - ...
 
-7. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u0438\u0442\u043E\u0433\u043E\u0432\u044B\u0439 Markdown \u0447\u0435\u0440\u0435\u0437 save_plan \u0441 source="agent".
+7. \u0415\u0441\u043B\u0438 \u0435\u0441\u0442\u044C \u043D\u0435\u0437\u0430\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B, \u0441\u043E\u0431\u0435\u0440\u0438 \u0438\u0445 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u0441\u043F\u0438\u0441\u043A\u043E\u043C \u0441\u0442\u0440\u043E\u043A. \u041D\u0435 \u0437\u0430\u043F\u0438\u0441\u044B\u0432\u0430\u0439 \u0438\u0445 \u0432 markdown-\u043F\u043B\u0430\u043D.
 
-8. \u041F\u043E\u0441\u043B\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F \u043F\u0435\u0440\u0435\u0432\u0435\u0434\u0438 \u0437\u0430\u0434\u0430\u0447\u0443 \u0432 \u0441\u0442\u0430\u0442\u0443\u0441 implementation \u0447\u0435\u0440\u0435\u0437 update_task_status.
+8. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u0438\u0442\u043E\u0433\u043E\u0432\u044B\u0439 Markdown \u0447\u0435\u0440\u0435\u0437 save_plan \u0441 source="agent". \u0415\u0441\u043B\u0438 \u0435\u0441\u0442\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B, \u043F\u0435\u0440\u0435\u0434\u0430\u0439 \u0438\u0445 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u043F\u043E\u043B\u0435\u043C openQuestions.
 
-9. \u041F\u043E\u0441\u043B\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F \u043E\u0442\u0432\u0435\u0442\u044C \u043A\u0440\u0430\u0442\u043A\u043E:
+9. \u041F\u043E\u0441\u043B\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F \u043F\u0435\u0440\u0435\u0432\u0435\u0434\u0438 \u0437\u0430\u0434\u0430\u0447\u0443 \u0432 \u0441\u0442\u0430\u0442\u0443\u0441 implementation \u0447\u0435\u0440\u0435\u0437 update_task_status.
+
+10. \u041F\u043E\u0441\u043B\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F \u043E\u0442\u0432\u0435\u0442\u044C \u043A\u0440\u0430\u0442\u043A\u043E:
 - \u043A\u0430\u043A\u043E\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0431\u044B\u043B \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D
 - \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0431\u044B\u043B\u0430 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u0430 \u0438\u043B\u0438 \u0443\u0436\u0435 \u0431\u044B\u043B\u0430 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u0430
 - \u043A\u0430\u043A\u0430\u044F \u0437\u0430\u0434\u0430\u0447\u0430 \u0431\u044B\u043B\u0430 \u0440\u0430\u0441\u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0430
 - \u043A\u0430\u043A\u043E\u0439 \u0441\u0442\u0430\u0442\u0443\u0441 \u0431\u044B\u043B \u0432\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D \u043F\u043E\u0441\u043B\u0435 \u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u044F
 - \u043F\u043B\u0430\u043D \u0431\u044B\u043B \u0441\u043E\u0437\u0434\u0430\u043D \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D
+- \u0431\u044B\u043B\u0438 \u043B\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u043E
 - \u043A\u043E\u0440\u043E\u0442\u043A\u0430\u044F \u0441\u0432\u043E\u0434\u043A\u0430 \u043F\u043B\u0430\u043D\u0430
 
 \u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043F\u043E\u0441\u043B\u0435 \u0430\u043D\u0430\u043B\u0438\u0437\u0430. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 Markdown \u043E\u0431\u0440\u0430\u0442\u043D\u043E \u0432 AITasker \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`
+          }
+        }
+      ]
+    })
+  );
+  server.registerPrompt(
+    "compress_plan_discussion",
+    {
+      description: "\u0421\u0436\u0430\u0442\u044C \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443 \u043F\u043E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F\u043C \u0438 \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430\u043C \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u044B\u0439 Markdown-\u043F\u043B\u0430\u043D \u0438 \u043E\u0447\u0438\u0441\u0442\u0438\u0442\u044C \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0435 discussion-\u0431\u043B\u043E\u043A\u0438.",
+      argsSchema: {
+        projectRef: z2.string().min(1).describe("Id \u0438\u043B\u0438 \u0447\u0438\u0442\u0430\u0435\u043C\u043E\u0435 \u0438\u043C\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430, \u0432\u043D\u0443\u0442\u0440\u0438 \u043A\u043E\u0442\u043E\u0440\u043E\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u0440\u0430\u0431\u043E\u0442\u0430\u0442\u044C."),
+        taskRef: z2.string().min(1).describe("Id \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u043B\u0438 \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u043E\u0447\u0438\u0442\u0430\u0435\u043C\u043E\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F."),
+        instructions: z2.string().optional().describe("\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0438\u044F \u043A \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u043C\u0443 \u043F\u043B\u0430\u043D\u0443 \u043F\u043E\u0441\u043B\u0435 \u0441\u0436\u0430\u0442\u0438\u044F \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438.")
+      }
+    },
+    async ({ instructions, projectRef, taskRef }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `\u0422\u044B \u0441\u0436\u0438\u043C\u0430\u0435\u0448\u044C \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443 \u043F\u043E \u0437\u0430\u0434\u0430\u0447\u0435, \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043D\u043E\u0439 \u0432 AITasker, \u043E\u0431\u0440\u0430\u0442\u043D\u043E \u0432 \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0439 \u043F\u043B\u0430\u043D.
+
+\u041F\u0440\u043E\u0435\u043A\u0442 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F: ${projectRef}
+\u0421\u0441\u044B\u043B\u043A\u0430 \u043D\u0430 \u0437\u0430\u0434\u0430\u0447\u0443 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F: ${taskRef}
+\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${instructions?.trim() || "none"}
+
+\u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B\u0439 workflow:
+1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project. \u0415\u0441\u043B\u0438 \u043F\u0440\u043E\u0435\u043A\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 find_projects.
+2. \u0421\u0440\u0430\u0437\u0443 \u0432\u044B\u0437\u043E\u0432\u0438 get_active_project \u0438 \u0443\u0431\u0435\u0434\u0438\u0441\u044C, \u0447\u0442\u043E \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u0430.
+3. \u0420\u0430\u0437\u0440\u0435\u0448\u0438 \u0437\u0430\u0434\u0430\u0447\u0443 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430. \u0415\u0441\u043B\u0438 taskRef \u043D\u0435 \u044F\u0432\u043B\u044F\u0435\u0442\u0441\u044F \u0442\u043E\u0447\u043D\u044B\u043C task id, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 find_tasks.
+4. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u0437\u0430\u0434\u0430\u0447\u0443 \u0447\u0435\u0440\u0435\u0437 get_task, \u0437\u0430\u0442\u0435\u043C \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E \u0432\u044B\u0437\u043E\u0432\u0438 get_plan.
+5. \u041D\u0430 \u043E\u0441\u043D\u043E\u0432\u0435 \u0442\u0435\u043A\u0443\u0449\u0435\u0433\u043E \u043F\u043B\u0430\u043D\u0430, \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0445 \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u0438 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438 \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u044C \u043D\u043E\u0432\u044B\u0439 \u0446\u0435\u043B\u044C\u043D\u044B\u0439 Markdown-\u043F\u043B\u0430\u043D \u0431\u0435\u0437 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0445 discussion-\u0431\u043B\u043E\u043A\u043E\u0432.
+6. \u0415\u0441\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 \u0441\u0436\u0430\u0442\u0438\u044F \u043E\u0441\u0442\u0430\u044E\u0442\u0441\u044F \u043D\u0435\u0437\u0430\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B, \u0441\u043E\u0431\u0435\u0440\u0438 \u0438\u0445 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u0441\u043F\u0438\u0441\u043A\u043E\u043C \u0441\u0442\u0440\u043E\u043A. \u041D\u0435 \u0437\u0430\u043F\u0438\u0441\u044B\u0432\u0430\u0439 \u0438\u0445 \u0432 markdown-\u043F\u043B\u0430\u043D.
+7. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0447\u0435\u0440\u0435\u0437 consolidate_plan_discussion \u0441 source="agent". \u0415\u0441\u043B\u0438 \u043E\u0441\u0442\u0430\u044E\u0442\u0441\u044F \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B, \u043F\u0435\u0440\u0435\u0434\u0430\u0439 \u0438\u0445 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u043F\u043E\u043B\u0435\u043C openQuestions.
+8. \u041F\u043E\u0441\u043B\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F \u043E\u0442\u0432\u0435\u0442\u044C \u043A\u0440\u0430\u0442\u043A\u043E:
+- \u043A\u0430\u043A\u043E\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0431\u044B\u043B \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D
+- \u043A\u0430\u043A\u0430\u044F \u0437\u0430\u0434\u0430\u0447\u0430 \u0431\u044B\u043B\u0430 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430
+- \u043A\u0430\u043A\u0438\u0435 \u043A\u043B\u044E\u0447\u0435\u0432\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u043F\u043E\u043F\u0430\u043B\u0438 \u0432 \u043D\u043E\u0432\u044B\u0439 \u043F\u043B\u0430\u043D
+- \u043E\u0441\u0442\u0430\u043B\u0438\u0441\u044C \u043B\u0438 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0435 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B \u043F\u043E\u0441\u043B\u0435 \u0441\u0436\u0430\u0442\u0438\u044F
+- \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435, \u0447\u0442\u043E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F \u0438 \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0438 \u0431\u044B\u043B\u0438 \u043E\u0447\u0438\u0449\u0435\u043D\u044B \u0438\u0437 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0445 \u0431\u043B\u043E\u043A\u043E\u0432
+
+\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E \u0432\u044B\u0437\u043E\u0432\u0438 consolidate_plan_discussion \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`
           }
         }
       ]
@@ -1442,7 +2289,7 @@ function createMcpServer(appService, logger) {
           {
             uri: uri.href,
             mimeType: "text/markdown",
-            text: detail.plan?.contentMd ?? ""
+            text: detail.plan ? parseManagedPlanContent(detail.plan.contentMd).renderedContentMd : ""
           }
         ]
       };
@@ -1622,12 +2469,103 @@ var McpHttpServer = class {
   }
 };
 
+// src/main/tray/app-tray.ts
+import { Menu, nativeImage, Tray } from "electron";
+var TRAY_ICON_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAH0lEQVQ4T2NkYGD4z8BAAhgHjIJRMApGwSgYBQAACgABBOJFYgAAAABJRU5ErkJggg==";
+function createAppTray(getWindow, app) {
+  const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA_URL);
+  const tray = new Tray(icon);
+  tray.setToolTip("AITasker");
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: "\u041E\u0442\u043A\u0440\u044B\u0442\u044C AITasker",
+      click() {
+        const win = getWindow();
+        if (!win) return;
+        win.show();
+        win.focus();
+      }
+    },
+    { type: "separator" },
+    {
+      label: "\u0412\u044B\u0439\u0442\u0438",
+      click() {
+        app.quit();
+      }
+    }
+  ]);
+  tray.setContextMenu(contextMenu);
+  tray.on("click", () => {
+    const win = getWindow();
+    if (!win) return;
+    if (win.isVisible()) {
+      win.hide();
+    } else {
+      win.show();
+      win.focus();
+    }
+  });
+  return tray;
+}
+function setupWindowHideOnClose(win, platform, app) {
+  if (platform === "darwin") return;
+  let isQuitting = false;
+  app.on("before-quit", () => {
+    isQuitting = true;
+  });
+  win.on("close", (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      win.hide();
+    }
+  });
+}
+
 // src/main/index.ts
+import { Menu as Menu2 } from "electron";
 var CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
 var APP_ROOT = join2(CURRENT_DIR, "..", "..");
 var RENDERER_DIST = join2(APP_ROOT, "dist");
 var PRELOAD_SCRIPT = join2(APP_ROOT, "preload.js");
 var VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+var DATA_CHANGED_CHANNEL = "app:data-changed";
+var FOCUS_TASK_CHANNEL = "app:focus-task";
+var NOTIFY_REASONS = /* @__PURE__ */ new Set([
+  "update-task-status",
+  "save-plan",
+  "create-task",
+  "append-plan-extension",
+  "append-plan-improvement"
+]);
+var REASON_LABELS = {
+  "update-task-status": "\u0421\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u0437\u043C\u0435\u043D\u0451\u043D",
+  "save-plan": "\u041F\u043B\u0430\u043D \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D",
+  "create-task": "\u0417\u0430\u0434\u0430\u0447\u0430 \u0441\u043E\u0437\u0434\u0430\u043D\u0430",
+  "append-plan-extension": "\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u043F\u043B\u0430\u043D\u0430",
+  "append-plan-improvement": "\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0430 \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430 \u043F\u043B\u0430\u043D\u0430"
+};
+async function sendTaskNotification(event, getWindow) {
+  if (!NOTIFY_REASONS.has(event.reason)) return;
+  const { Notification } = await import("electron");
+  if (!Notification.isSupported()) return;
+  const label = REASON_LABELS[event.reason] ?? event.reason;
+  const taskSuffix = event.taskId ? ` \xB7 ${event.taskId.slice(0, 8).toUpperCase()}` : "";
+  const notification = new Notification({
+    title: "AITasker",
+    body: label + taskSuffix,
+    silent: true
+  });
+  notification.on("click", () => {
+    const win = getWindow();
+    if (!win) return;
+    win.show();
+    win.focus();
+    if (event.taskId) {
+      win.webContents.send(FOCUS_TASK_CHANNEL, event.taskId);
+    }
+  });
+  notification.show();
+}
 var mainWindow = null;
 async function createMainWindow(runtime) {
   mainWindow = new runtime.BrowserWindow({
@@ -1655,6 +2593,7 @@ async function createMainWindow(runtime) {
 }
 function bootstrapMainProcess(runtime) {
   runtime.app.whenReady().then(async () => {
+    Menu2.setApplicationMenu(null);
     const databaseContext = createAppDatabase(runtime.app.getPath("userData"));
     const logger = createDevLogger();
     const taskRepository = new TaskRepository(databaseContext.database);
@@ -1670,6 +2609,12 @@ function bootstrapMainProcess(runtime) {
       databasePath: databaseContext.databasePath,
       getMcpEndpoint: () => mcpHttpServer?.endpoint ?? null,
       isMcpRunning: () => mcpHttpServer?.isRunning ?? false,
+      onDataChanged: (event) => {
+        for (const window of runtime.BrowserWindow.getAllWindows()) {
+          window.webContents.send(DATA_CHANGED_CHANNEL, event);
+        }
+        void sendTaskNotification(event, () => mainWindow);
+      },
       planRepository,
       platform: process.platform,
       projectRepository,
@@ -1683,6 +2628,10 @@ function bootstrapMainProcess(runtime) {
     });
     registerIpcHandlers(runtime.ipcMain, appService);
     await createMainWindow(runtime);
+    createAppTray(() => mainWindow, runtime.app);
+    if (mainWindow) {
+      setupWindowHideOnClose(mainWindow, process.platform, runtime.app);
+    }
     runtime.app.on("activate", async () => {
       if (runtime.BrowserWindow.getAllWindows().length === 0) {
         await createMainWindow(runtime);
@@ -1693,7 +2642,7 @@ function bootstrapMainProcess(runtime) {
     });
   });
   runtime.app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") {
+    if (process.platform === "darwin") {
       runtime.app.quit();
     }
   });

@@ -1,9 +1,10 @@
 /*
-Назначение: Создает MCP-сервер, который работает с проектами, задачами и планами через активный и заполненный проектный профиль.
+Назначение: Создает MCP-сервер, который работает с проектами, задачами, планами, расширениями и доработками через активный и заполненный проектный профиль.
 Не входит: HTTP-хостинг, жизненный цикл Electron-окна и прямое создание файлов внешними агентами.
 */
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { findManagedPlanComment, parseManagedPlanContent } from "../../shared/plans/managed-plan-content";
 import { normalizeProjectName } from "../db/project-repository";
 import type { AppService } from "../services/app-service";
 import type { DevLogger } from "../services/dev-logger";
@@ -19,7 +20,14 @@ function ensureStructuredPlan(
   plan: Awaited<ReturnType<AppService["getTaskDetail"]>>["plan"],
   taskId: string
 ) {
-  return plan ?? { taskId, exists: false, contentMd: "" };
+  if (!plan) {
+    return { taskId, exists: false, contentMd: "" };
+  }
+
+  return {
+    ...plan,
+    contentMd: parseManagedPlanContent(plan.contentMd).renderedContentMd
+  };
 }
 
 function findProjectsByQuery(projects: ProjectRecord[], query: string, limit: number) {
@@ -373,10 +381,10 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
     "update_task_status",
     {
       description:
-        "Обновить статус задачи внутри активного подготовленного проекта. Допустимые статусы: new, planning, implementation, completed.",
+        "Обновить статус задачи внутри активного подготовленного проекта. Допустимые статусы: new, planning, requires_clarification, implementation, completed.",
       inputSchema: {
         taskId: z.string(),
-        status: z.enum(["new", "planning", "implementation", "completed"])
+        status: z.enum(["new", "planning", "requires_clarification", "implementation", "completed"])
       }
     },
     async ({ status, taskId }) => {
@@ -394,7 +402,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
   server.registerTool(
     "get_plan",
     {
-      description: "Получить текущий Markdown-план задачи внутри активного подготовленного проекта.",
+      description: "Получить текущий Markdown-план задачи вместе с расширениями и доработками внутри активного подготовленного проекта.",
       inputSchema: {
         taskId: z.string()
       }
@@ -404,8 +412,74 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       const { detail } = await getScopedTaskDetail(taskId);
 
       return {
-        content: textContent(detail.plan?.contentMd ?? ""),
+        content: textContent(detail.plan ? parseManagedPlanContent(detail.plan.contentMd).renderedContentMd : ""),
         structuredContent: ensureStructuredPlan(detail.plan, taskId)
+      };
+    }
+  );
+
+  server.registerTool(
+    "get_plan_extension",
+    {
+      description: "Получить одно конкретное расширение плана по extensionId без чтения всего плана.",
+      inputSchema: {
+        taskId: z.string(),
+        extensionId: z.string().min(1)
+      }
+    },
+    async ({ extensionId, taskId }) => {
+      logger.debug("mcp", "Tool get_plan_extension called", { taskId, extensionId });
+      const { detail } = await getScopedTaskDetail(taskId);
+
+      if (!detail.plan) {
+        throw new Error(`План задачи ${taskId} не найден.`);
+      }
+
+      const extension = findManagedPlanComment(detail.plan.contentMd, "extension", extensionId);
+
+      if (!extension) {
+        throw new Error(`Расширение ${extensionId} для задачи ${taskId} не найдено.`);
+      }
+
+      return {
+        content: textContent(extension.content),
+        structuredContent: {
+          extension,
+          taskId
+        }
+      };
+    }
+  );
+
+  server.registerTool(
+    "get_plan_improvement",
+    {
+      description: "Получить одну конкретную доработку плана по improvementId без чтения всего плана.",
+      inputSchema: {
+        taskId: z.string(),
+        improvementId: z.string().min(1)
+      }
+    },
+    async ({ improvementId, taskId }) => {
+      logger.debug("mcp", "Tool get_plan_improvement called", { taskId, improvementId });
+      const { detail } = await getScopedTaskDetail(taskId);
+
+      if (!detail.plan) {
+        throw new Error(`План задачи ${taskId} не найден.`);
+      }
+
+      const improvement = findManagedPlanComment(detail.plan.contentMd, "improvement", improvementId);
+
+      if (!improvement) {
+        throw new Error(`Доработка ${improvementId} для задачи ${taskId} не найдена.`);
+      }
+
+      return {
+        content: textContent(improvement.content),
+        structuredContent: {
+          improvement,
+          taskId
+        }
       };
     }
   );
@@ -413,19 +487,25 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
   server.registerTool(
     "save_plan",
     {
-      description: "Сохранить Markdown-план для задачи внутри активного подготовленного проекта.",
+      description: "Сохранить Markdown-план и отдельный список открытых вопросов для задачи внутри активного подготовленного проекта.",
       inputSchema: {
         taskId: z.string(),
         contentMd: z.string().min(1),
+        openQuestions: z.array(z.string().min(1)).optional(),
         source: z.enum(["human", "agent"]).optional()
       }
     },
-    async ({ contentMd, source, taskId }) => {
+    async ({ contentMd, openQuestions, source, taskId }) => {
       await getScopedTaskDetail(taskId);
-      logger.info("mcp", "Tool save_plan called", { taskId, source: source ?? "agent" });
+      logger.info("mcp", "Tool save_plan called", {
+        taskId,
+        openQuestionsCount: openQuestions?.length ?? 0,
+        source: source ?? "agent"
+      });
       const detail = await appService.savePlan({
         taskId,
         contentMd,
+        openQuestions,
         source: source ?? "agent"
       });
 
@@ -437,21 +517,75 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
   );
 
   server.registerTool(
-    "append_plan_note",
+    "append_plan_extension",
     {
-      description: "Добавить заметку или открытый вопрос в план задачи внутри активного подготовленного проекта.",
+      description: "Добавить расширение текущего плана задачи без создания новой ревизии.",
       inputSchema: {
         taskId: z.string(),
-        note: z.string().min(1)
+        content: z.string().min(1)
       }
     },
-    async ({ note, taskId }) => {
+    async ({ content, taskId }) => {
       await getScopedTaskDetail(taskId);
-      logger.info("mcp", "Tool append_plan_note called", { taskId });
-      const detail = await appService.appendPlanNote({ taskId, note });
+      logger.info("mcp", "Tool append_plan_extension called", { taskId });
+      const detail = await appService.appendPlanExtension({ taskId, content, author: "agent" });
 
       return {
-        content: textContent("Заметка добавлена в план."),
+        content: textContent("Расширение плана добавлено."),
+        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+      };
+    }
+  );
+
+  server.registerTool(
+    "append_plan_improvement",
+    {
+      description: "Добавить доработку плана отдельным блоком без создания новой ревизии.",
+      inputSchema: {
+        taskId: z.string(),
+        content: z.string().min(1)
+      }
+    },
+    async ({ content, taskId }) => {
+      await getScopedTaskDetail(taskId);
+      logger.info("mcp", "Tool append_plan_improvement called", { taskId });
+      const detail = await appService.appendPlanImprovement({ taskId, content, author: "agent" });
+
+      return {
+        content: textContent("Доработка плана добавлена."),
+        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+      };
+    }
+  );
+
+  server.registerTool(
+    "consolidate_plan_discussion",
+    {
+      description:
+        "Сжать переписку по плану в новый Markdown-план, при необходимости сохранить новый список открытых вопросов и очистить отдельные блоки обсуждения.",
+      inputSchema: {
+        taskId: z.string(),
+        contentMd: z.string().min(1),
+        openQuestions: z.array(z.string().min(1)).optional(),
+        source: z.enum(["human", "agent"]).optional()
+      }
+    },
+    async ({ contentMd, openQuestions, source, taskId }) => {
+      await getScopedTaskDetail(taskId);
+      logger.info("mcp", "Tool consolidate_plan_discussion called", {
+        taskId,
+        openQuestionsCount: openQuestions?.length ?? 0,
+        source: source ?? "agent"
+      });
+      const detail = await appService.consolidatePlanDiscussion({
+        taskId,
+        contentMd,
+        openQuestions,
+        source: source ?? "agent"
+      });
+
+      return {
+        content: textContent("Переписка по плану сжата в текущий план и очищена из отдельных блоков."),
         structuredContent: ensureStructuredPlan(detail.plan, taskId)
       };
     }
@@ -512,7 +646,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
 5. Прочитай контекст задачи.
 Вызови get_task с точным task id.
-Если у задачи уже есть план или заметки, также вызови get_plan.
+Если у задачи уже есть план, расширения или доработки, также вызови get_plan.
 
 6. Подготовь Markdown в формате:
 
@@ -529,25 +663,79 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 2. ...
 3. ...
 
-## Открытые вопросы
-- ...
-
 ## Критерии готовности
 - ...
 
-7. Сохрани итоговый Markdown через save_plan с source="agent".
+7. Если есть незакрытые вопросы, собери их отдельным списком строк. Не записывай их в markdown-план.
 
-8. После сохранения переведи задачу в статус implementation через update_task_status.
+8. Сохрани итоговый Markdown через save_plan с source="agent". Если есть открытые вопросы, передай их отдельным полем openQuestions.
 
-9. После сохранения ответь кратко:
+9. После сохранения переведи задачу в статус implementation через update_task_status.
+
+10. После сохранения ответь кратко:
 - какой проект был активирован
 - карточка проекта была заполнена или уже была заполнена
 - какая задача была распланирована
 - какой статус был выставлен после планирования
 - план был создан или обновлен
+- были ли сохранены открытые вопросы отдельно
 - короткая сводка плана
 
 Не останавливайся после анализа. Сохрани Markdown обратно в AITasker до финального ответа.`
+          }
+        }
+      ]
+    })
+  );
+
+  server.registerPrompt(
+    "compress_plan_discussion",
+    {
+      description:
+        "Сжать переписку по расширениям и доработкам задачи в обновленный Markdown-план и очистить отдельные discussion-блоки.",
+      argsSchema: {
+        projectRef: z
+          .string()
+          .min(1)
+          .describe("Id или читаемое имя проекта, внутри которого нужно работать."),
+        taskRef: z
+          .string()
+          .min(1)
+          .describe("Id задачи или человекочитаемое название задачи из запроса пользователя."),
+        instructions: z
+          .string()
+          .optional()
+          .describe("Дополнительные ограничения к обновленному плану после сжатия переписки.")
+      }
+    },
+    async ({ instructions, projectRef, taskRef }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Ты сжимаешь переписку по задаче, сохраненной в AITasker, обратно в основной план.
+
+Проект из запроса пользователя: ${projectRef}
+Ссылка на задачу из запроса пользователя: ${taskRef}
+Дополнительные инструкции: ${instructions?.trim() || "none"}
+
+Обязательный workflow:
+1. Активируй проект через activate_project. Если проект не найден, используй find_projects.
+2. Сразу вызови get_active_project и убедись, что карточка проекта заполнена.
+3. Разреши задачу внутри активного проекта. Если taskRef не является точным task id, используй find_tasks.
+4. Прочитай задачу через get_task, затем обязательно вызови get_plan.
+5. На основе текущего плана, открытых вопросов и переписки подготовь новый цельный Markdown-план без отдельных discussion-блоков.
+6. Если после сжатия остаются незакрытые вопросы, собери их отдельным списком строк. Не записывай их в markdown-план.
+7. Сохрани обновленный план через consolidate_plan_discussion с source="agent". Если остаются открытые вопросы, передай их отдельным полем openQuestions.
+8. После сохранения ответь кратко:
+- какой проект был активирован
+- какая задача была обновлена
+- какие ключевые изменения попали в новый план
+- остались ли отдельные открытые вопросы после сжатия
+- подтверждение, что расширения и доработки были очищены из отдельных блоков
+
+Не останавливайся на анализе. Обязательно вызови consolidate_plan_discussion до финального ответа.`
           }
         }
       ]
@@ -655,7 +843,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
           {
             uri: uri.href,
             mimeType: "text/markdown",
-            text: detail.plan?.contentMd ?? ""
+            text: detail.plan ? parseManagedPlanContent(detail.plan.contentMd).renderedContentMd : ""
           }
         ]
       };

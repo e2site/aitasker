@@ -2,7 +2,8 @@
 Назначение: Рендерит левый сайдбар с созданием задач и разбивкой списка по проектам.
 Не входит: Отрисовка деталей задачи и редактирование плана.
 */
-import type { CreateTaskInput, ProjectRecord, TaskRecord, TaskStatus } from "@/shared/contracts/desktop-api";
+import type { CreateTaskInput, ProjectRecord, TaskRecord, TaskStatus, UpdateProjectProfileInput } from "@/shared/contracts/desktop-api";
+import { ProjectCard } from "@/renderer/components/project-card";
 import { ProjectSwitcher } from "@/renderer/components/project-switcher";
 import { TaskCreateForm } from "@/renderer/components/task-create-form";
 import { TaskStatusBadge } from "@/renderer/components/task-status-badge";
@@ -11,9 +12,11 @@ import { cn } from "@/renderer/components/ui/class-names";
 export interface TaskListSidebarProps {
   allTasks: TaskRecord[];
   isCreating: boolean;
+  isUpdatingProject: boolean;
   onCreate(input: CreateTaskInput): void;
   onSelectProject(projectId: string | null): void;
   onSelect(taskId: string): void;
+  onUpdateProjectProfile(input: UpdateProjectProfileInput): void;
   projects: ProjectRecord[];
   selectedProjectId: string | null;
   selectedTaskId: string | null;
@@ -23,6 +26,7 @@ export interface TaskListSidebarProps {
 const STATUS_GROUPS: { status: TaskStatus; label: string }[] = [
   { status: "new", label: "Новые" },
   { status: "planning", label: "Планирование" },
+  { status: "requires_clarification", label: "Требуют уточнений" },
   { status: "implementation", label: "Реализация" },
   { status: "completed", label: "Выполнено" }
 ];
@@ -68,12 +72,11 @@ export function TaskListSidebar(props: TaskListSidebarProps) {
 
       <div className="flex-1 overflow-y-auto">
         {selectedProject ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-            <p className="text-sm font-semibold text-slate-900">{selectedProject.name}</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              {selectedProject.description || "Описание проекта пока не заполнено."}
-            </p>
-          </div>
+          <ProjectCard
+            project={selectedProject}
+            isUpdating={props.isUpdatingProject}
+            onSave={props.onUpdateProjectProfile}
+          />
         ) : null}
 
         {props.selectedProjectId === null ? (

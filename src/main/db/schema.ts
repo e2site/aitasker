@@ -1,5 +1,5 @@
 /*
-Назначение: Описывает Drizzle-схему SQLite для проектов, задач, планов и сессий агента.
+Назначение: Описывает Drizzle-схему SQLite для проектов, задач, текущих планов, ревизий планов и сессий агента.
 Не входит: Реализация запросов, подключение к базе и выполнение миграций.
 */
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -41,6 +41,19 @@ export const plansTable = sqliteTable("plans", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
 });
 
+export const planRevisionsTable = sqliteTable("plan_revisions", {
+  id: text("id").primaryKey(),
+  planId: text("plan_id")
+    .notNull()
+    .references(() => plansTable.id, { onDelete: "cascade" }),
+  taskId: text("task_id")
+    .notNull()
+    .references(() => tasksTable.id, { onDelete: "cascade" }),
+  contentMd: text("content_md").notNull(),
+  source: text("source").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull()
+});
+
 export const agentSessionsTable = sqliteTable("agent_sessions", {
   id: text("id").primaryKey(),
   taskId: text("task_id")
@@ -57,6 +70,7 @@ export const agentSessionsTable = sqliteTable("agent_sessions", {
 
 export const databaseSchema = {
   agentSessionsTable,
+  planRevisionsTable,
   plansTable,
   projectsTable,
   tasksTable

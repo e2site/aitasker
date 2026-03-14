@@ -1,10 +1,5 @@
 /*
-Purpose: Merge conditional class names in a way that is compatible with Tailwind utility conflicts.
-Out of scope: Component styling rules and variant definitions.
+Назначение: Сохраняет совместимость старых renderer-импортов и перенаправляет `cn` на официальный util из `shadcn/ui`.
+Не входит: Локальная реализация merge-логики и описание компонентных стилей.
 */
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+export { cn } from "@/lib/utils";

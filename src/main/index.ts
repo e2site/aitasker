@@ -1,5 +1,5 @@
 /*
-Назначение: Запускает main process Electron, инициализирует локальные сервисы данных и поднимает MCP-сервер.
+Назначение: Запускает main process Electron, инициализирует локальные сервисы данных, отключает стандартное меню и поднимает MCP-сервер.
 Не входит: Получение Electron API, описание схемы базы и реализация renderer-интерфейса.
 */
 import { dirname, join } from "node:path";
@@ -15,13 +15,65 @@ import type { AppService } from "./services/app-service";
 import { createDevLogger } from "./services/dev-logger";
 import { registerIpcHandlers } from "./ipc/register-ipc-handlers";
 import { McpHttpServer } from "./mcp/mcp-http-server";
+import { createAppTray, setupWindowHideOnClose } from "./tray/app-tray";
+import { Menu } from "electron";
 import type { App, BrowserWindow as BrowserWindowType, IpcMain } from "electron";
+import type { DesktopDataChangeEvent } from "../shared/contracts/desktop-api";
 
 const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = join(CURRENT_DIR, "..", "..");
 const RENDERER_DIST = join(APP_ROOT, "dist");
 const PRELOAD_SCRIPT = join(APP_ROOT, "preload.js");
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+const DATA_CHANGED_CHANNEL = "app:data-changed";
+const FOCUS_TASK_CHANNEL = "app:focus-task";
+
+const NOTIFY_REASONS = new Set<DesktopDataChangeEvent["reason"]>([
+  "update-task-status",
+  "save-plan",
+  "create-task",
+  "append-plan-extension",
+  "append-plan-improvement"
+]);
+
+const REASON_LABELS: Partial<Record<DesktopDataChangeEvent["reason"], string>> = {
+  "update-task-status": "Статус задачи изменён",
+  "save-plan": "План обновлён",
+  "create-task": "Задача создана",
+  "append-plan-extension": "Добавлено расширение плана",
+  "append-plan-improvement": "Добавлена доработка плана"
+};
+
+async function sendTaskNotification(
+  event: DesktopDataChangeEvent,
+  getWindow: () => BrowserWindowType | null
+): Promise<void> {
+  if (!NOTIFY_REASONS.has(event.reason)) return;
+
+  const { Notification } = await import("electron");
+  if (!Notification.isSupported()) return;
+
+  const label = REASON_LABELS[event.reason] ?? event.reason;
+  const taskSuffix = event.taskId ? ` · ${event.taskId.slice(0, 8).toUpperCase()}` : "";
+
+  const notification = new Notification({
+    title: "AITasker",
+    body: label + taskSuffix,
+    silent: true
+  });
+
+  notification.on("click", () => {
+    const win = getWindow();
+    if (!win) return;
+    win.show();
+    win.focus();
+    if (event.taskId) {
+      win.webContents.send(FOCUS_TASK_CHANNEL, event.taskId);
+    }
+  });
+
+  notification.show();
+}
 
 export interface MainProcessRuntime {
   BrowserWindow: typeof BrowserWindowType;
@@ -61,6 +113,7 @@ async function createMainWindow(runtime: MainProcessRuntime): Promise<void> {
 
 export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
   runtime.app.whenReady().then(async () => {
+    Menu.setApplicationMenu(null);
     const databaseContext = createAppDatabase(runtime.app.getPath("userData"));
     const logger = createDevLogger();
     const taskRepository = new TaskRepository(databaseContext.database);
@@ -77,6 +130,12 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
       databasePath: databaseContext.databasePath,
       getMcpEndpoint: () => mcpHttpServer?.endpoint ?? null,
       isMcpRunning: () => mcpHttpServer?.isRunning ?? false,
+      onDataChanged: (event) => {
+        for (const window of runtime.BrowserWindow.getAllWindows()) {
+          window.webContents.send(DATA_CHANGED_CHANNEL, event);
+        }
+        void sendTaskNotification(event, () => mainWindow);
+      },
       planRepository,
       platform: process.platform,
       projectRepository,
@@ -93,6 +152,14 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
     registerIpcHandlers(runtime.ipcMain, appService);
     await createMainWindow(runtime);
 
+    // Tray icon
+    createAppTray(() => mainWindow, runtime.app);
+
+    // Hide to tray instead of closing (non-macOS)
+    if (mainWindow) {
+      setupWindowHideOnClose(mainWindow, process.platform, runtime.app);
+    }
+
     runtime.app.on("activate", async () => {
       if (runtime.BrowserWindow.getAllWindows().length === 0) {
         await createMainWindow(runtime);
@@ -105,7 +172,8 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
   });
 
   runtime.app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") {
+    // On non-macOS, window closing hides to tray — quit only via tray menu
+    if (process.platform === "darwin") {
       runtime.app.quit();
     }
   });

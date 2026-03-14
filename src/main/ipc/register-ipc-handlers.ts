@@ -1,12 +1,15 @@
 /*
-Назначение: Регистрирует типизированные IPC-обработчики для доступа renderer к сервису проектов, задач и планов.
+Назначение: Регистрирует типизированные IPC-обработчики для доступа renderer к сервису проектов, задач, планов и их служебных блоков.
 Не входит: Реализация preload, репозиториев и composition логики в renderer.
 */
 import type { IpcMain } from "electron";
 import type { AppService } from "../services/app-service";
 
 const channels = {
-  appendPlanNote: "app:append-plan-note",
+  answerPlanQuestion: "app:answer-plan-question",
+  appendPlanExtension: "app:append-plan-extension",
+  appendPlanImprovement: "app:append-plan-improvement",
+  consolidatePlanDiscussion: "app:consolidate-plan-discussion",
   createProject: "app:create-project",
   createTask: "app:create-task",
   deleteTask: "app:delete-task",
@@ -15,6 +18,7 @@ const channels = {
   getTaskDetail: "app:get-task-detail",
   listProjects: "app:list-projects",
   listTasks: "app:list-tasks",
+  restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
   updateTaskStatus: "app:update-task-status",
   updateProjectProfile: "app:update-project-profile"
@@ -48,11 +52,23 @@ export function registerIpcHandlers(ipcMain: IpcMain, appService: AppService): v
   ipcMain.handle(channels.deleteTask, (_event, taskId: string) =>
     withIpcErrors(() => appService.deleteTask(taskId))
   );
+  ipcMain.handle(channels.restorePlanRevision, (_event, input) =>
+    withIpcErrors(() => appService.restorePlanRevision(input))
+  );
   ipcMain.handle(channels.savePlan, (_event, input) =>
     withIpcErrors(() => appService.savePlan(input))
   );
-  ipcMain.handle(channels.appendPlanNote, (_event, input) =>
-    withIpcErrors(() => appService.appendPlanNote(input))
+  ipcMain.handle(channels.answerPlanQuestion, (_event, input) =>
+    withIpcErrors(() => appService.answerPlanQuestion(input))
+  );
+  ipcMain.handle(channels.appendPlanExtension, (_event, input) =>
+    withIpcErrors(() => appService.appendPlanExtension(input))
+  );
+  ipcMain.handle(channels.appendPlanImprovement, (_event, input) =>
+    withIpcErrors(() => appService.appendPlanImprovement(input))
+  );
+  ipcMain.handle(channels.consolidatePlanDiscussion, (_event, input) =>
+    withIpcErrors(() => appService.consolidatePlanDiscussion(input))
   );
   ipcMain.handle(channels.updateTaskStatus, (_event, input) =>
     withIpcErrors(() => appService.updateTaskStatus(input))

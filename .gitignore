@@ -1,0 +1,14 @@
+# Purpose: Ignore generated artifacts and local runtime data for the desktop app.
+# Out of scope: Repository-specific policy beyond standard Node/Electron outputs.
+node_modules/
+out/
+dist/
+release/
+.turbo/
+.idea/
+.vscode/
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+

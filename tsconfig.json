@@ -1,0 +1,24 @@
+// Purpose: Define shared TypeScript compiler settings for editor support and project-wide type checking.
+// Out of scope: JavaScript emission for the Electron runtime and bundler-specific plugin behavior.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "types": ["node", "electron"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["vite.config.ts", "drizzle.config.ts", "src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"]
+}

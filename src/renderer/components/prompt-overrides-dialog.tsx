@@ -5,6 +5,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Eye, RotateCcw, Save, Settings2, X } from "lucide-react";
+import {
+  BASE_PROMPT_TEMPLATES,
+  getPromptVars,
+  type PromptId
+} from "@/renderer/components/mcp-prompt-presets";
 
 const TASK_STATUSES = [
   { value: "new", label: "Новая", color: "bg-slate-200 text-slate-700" },
@@ -13,11 +18,7 @@ const TASK_STATUSES = [
   { value: "implementation", label: "Реализация", color: "bg-amber-100 text-amber-700" },
   { value: "completed", label: "Завершена", color: "bg-emerald-100 text-emerald-700" },
 ] as const;
-import {
-  BASE_PROMPT_TEMPLATES,
-  getPromptVars,
-  type PromptId
-} from "@/renderer/components/mcp-prompt-presets";
+
 import { previewPromptTemplate, renderPromptTemplate } from "@/shared/prompts/prompt-template";
 import type { PromptOverrideRecord, TaskDetail } from "@/shared/contracts/desktop-api";
 import {
@@ -69,7 +70,16 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
   const [selectedId, setSelectedId] = useState<PromptId>(PROMPT_IDS[0]);
   const [editorValues, setEditorValues] = useState<EditorState>({});
   const [showPreview, setShowPreview] = useState(false);
+  const [copiedStatus, setCopiedStatus] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  function handleCopyStatus(value: string) {
+    if (!navigator.clipboard?.writeText) return;
+    void navigator.clipboard.writeText(value).then(() => {
+      setCopiedStatus(value);
+      window.setTimeout(() => setCopiedStatus((cur) => cur === value ? null : cur), 1500);
+    });
+  }
 
   const overrides: PromptOverrideRecord[] = overridesQuery.data ?? [];
 
@@ -235,12 +245,20 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
               </p>
               <div className="space-y-1">
                 {TASK_STATUSES.map(({ value, label, color }) => (
-                  <div key={value} className="flex items-center gap-1.5">
+                  <button
+                    key={value}
+                    type="button"
+                    title={`Копировать: ${value}`}
+                    onClick={() => handleCopyStatus(value)}
+                    className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 transition hover:bg-slate-100"
+                  >
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${color}`}>
                       {label}
                     </span>
-                    <code className="truncate text-[10px] text-slate-400">{value}</code>
-                  </div>
+                    <code className="text-[10px] text-slate-400">
+                      {copiedStatus === value ? "✓" : value}
+                    </code>
+                  </button>
                 ))}
               </div>
             </div>

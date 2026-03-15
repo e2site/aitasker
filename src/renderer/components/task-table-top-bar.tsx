@@ -16,9 +16,13 @@ import type {
 } from "@/shared/contracts/desktop-api";
 import { createProjectInputSchema } from "@/shared/contracts/desktop-api";
 import { ProjectCard } from "@/renderer/components/project-card";
+import { PromptOverridesDialog } from "@/renderer/components/prompt-overrides-dialog";
+import { SettingsDropdown } from "@/renderer/components/settings-dropdown";
 import { TaskCreateForm } from "@/renderer/components/task-create-form";
 import { cn } from "@/renderer/components/ui/class-names";
 import { Button } from "@/renderer/components/ui/button";
+import { usePromptOverridesQuery } from "@/renderer/features/prompts/use-prompt-override-queries";
+import { getPromptVars, resolvePrompt } from "@/renderer/components/mcp-prompt-presets";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,9 +51,13 @@ export interface TaskTableTopBarProps {
   filteredCount: number;
   isCreating: boolean;
   isCreatingProject: boolean;
+  isExportingData: boolean;
+  isImportingData: boolean;
   isUpdatingProject: boolean;
   onCreate(input: CreateTaskInput): void;
   onCreateProject(name: string): void;
+  onExportData(): void;
+  onImportData(): void;
   onSelectProject(projectId: string | null): void;
   onStatusFilterChange(statuses: TaskStatus[]): void;
   onSearchChange(query: string): void;
@@ -61,42 +69,6 @@ export interface TaskTableTopBarProps {
   totalCount: number;
 }
 
-function buildProjectSkillPrompt(project: ProjectRecord): string {
-  const projectPath = project.rootPath ?? "<укажи путь проекта>";
-  const skillFilePath = project.skillFilePath ?? `${projectPath}\\SKILL.md`;
-  const languages = project.languages.length ? project.languages.join(", ") : "не указаны";
-  const description = project.description.trim() || "Описание проекта пока не заполнено";
-
-  return `Активируй в aitasker проект "${project.name}" (${project.id}).
-Проверь карточку проекта и при необходимости уточни rootPath, languages и skillFilePath.
-Затем создай или обнови файл SKILL.md по пути "${skillFilePath}".
-
-Контекст проекта:
-- Название: ${project.name}
-- Путь: ${projectPath}
-- Языки: ${languages}
-- Описание: ${description}
-
-Что должно быть в SKILL.md:
-1. Краткое назначение проекта и рабочий контекст.
-2. Как агенту работать с MCP AITasker именно в этом проекте.
-3. Как активировать проект и проверять его карточку.
-4. Как создавать задачи через MCP и какие поля обязательны.
-5. Как искать задачи, читать задачу и получать текущий план.
-6. Как создавать и обновлять план через save_plan.
-7. Что открытые вопросы передаются отдельно от markdown-плана через openQuestions.
-8. Как отвечать на открытые вопросы и что после ответа они переходят в обсуждение.
-9. Как использовать append_plan_extension и append_plan_improvement для переписки по задаче.
-10. Как использовать get_plan_extension и get_plan_improvement для точечного чтения обсуждения.
-11. Как сжимать переписку обратно в план через consolidate_plan_discussion.
-12. Какие статусы задач доступны и что через интерфейс статус блокируется, пока есть открытые вопросы.
-13. Практические правила работы: сначала читать проект и задачу, потом менять план, не плодить лишние ревизии, фиксировать решения в обсуждении.
-
-После создания файла:
-- при необходимости сохрани путь к SKILL.md в карточке проекта через update_project_profile;
-- кратко отчитайся, что добавлено в SKILL.md.`;
-}
-
 function buildMcpEndpointHint(): string {
   return "http://127.0.0.1:39291/mcp";
 }
@@ -105,7 +77,11 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showProjectCreateModal, setShowProjectCreateModal] = useState(false);
+  const [showPromptOverridesModal, setShowPromptOverridesModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<null | { description: string; title: string }>(null);
+
+  const overridesQuery = usePromptOverridesQuery();
+  const overrides = overridesQuery.data ?? [];
 
   const selectedProject = props.projects.find((p) => p.id === props.selectedProjectId) ?? null;
   const projectSuggestions = props.projects.map((p) => p.name).sort((a, b) => a.localeCompare(b, "ru-RU"));
@@ -127,11 +103,15 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
 
   function handleCopyAgentPrompt() {
     const projectName = selectedProject?.name ?? "<укажи проект>";
-    const agentPrompt =
-      `Активируй в aitasker проект "${projectName}". ` +
-      `Распланируй задачу, сохрани план через MCP и переведи задачу в статус planning. Выполнять сразу не надо. ` +
-      `Задача: `;
-
+    const projectPath = selectedProject?.rootPath ?? "<укажи путь проекта>";
+    const vars = [
+      { name: "projectName", value: projectName, placeholder: "«Название проекта»" },
+      { name: "projectPath", value: projectPath, placeholder: "«Путь к проекту»" },
+      { name: "taskTitle", value: "", placeholder: "" },
+      { name: "taskId", value: "", placeholder: "" },
+      { name: "skillFilePath", value: "", placeholder: "" }
+    ];
+    const agentPrompt = resolvePrompt("agent-task-prompt", vars, overrides);
     copyPrompt(agentPrompt, "Промт скопирован", "Вставь его в агента и допиши задачу в конце");
   }
 
@@ -140,8 +120,18 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
       return;
     }
 
+    const fakeDetail = {
+      task: { projectName: selectedProject.name, title: "", id: "" },
+      project: {
+        rootPath: selectedProject.rootPath,
+        skillFilePath: selectedProject.skillFilePath
+      }
+    };
+    const vars = getPromptVars(fakeDetail as Parameters<typeof getPromptVars>[0]);
+    const skillPrompt = resolvePrompt("project-skill", vars, overrides);
+
     copyPrompt(
-      buildProjectSkillPrompt(selectedProject),
+      skillPrompt,
       "Промт скопирован",
       "Вставь его в агента, чтобы он создал или обновил SKILL.md"
     );
@@ -220,7 +210,14 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
         </button>
 
         {/* Кнопка с дропдауном: создать задачу / создать в агенте */}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <SettingsDropdown
+            isExporting={props.isExportingData}
+            isImporting={props.isImportingData}
+            onExportData={props.onExportData}
+            onImportData={props.onImportData}
+            onOpenPromptOverrides={() => setShowPromptOverridesModal(true)}
+          />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" size="sm">
@@ -334,6 +331,13 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
           />
         </Modal>
       )}
+
+      {/* Modal: prompt overrides */}
+      <PromptOverridesDialog
+        detail={null}
+        isOpen={showPromptOverridesModal}
+        onClose={() => setShowPromptOverridesModal(false)}
+      />
 
       {/* Modal: project settings */}
       {showProjectModal && selectedProject && (

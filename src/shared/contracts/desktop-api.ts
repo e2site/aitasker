@@ -83,12 +83,25 @@ export const agentSessionRecordSchema = z.object({
 });
 export type AgentSessionRecord = z.infer<typeof agentSessionRecordSchema>;
 
+export const linkedTaskRecordSchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  title: z.string(),
+  status: taskStatusSchema,
+  projectName: z.string(),
+  comment: z.string(),
+  direction: z.enum(["outgoing", "incoming"]),
+  createdAt: z.string()
+});
+export type LinkedTaskRecord = z.infer<typeof linkedTaskRecordSchema>;
+
 export const taskDetailSchema = z.object({
   project: projectRecordSchema,
   task: taskRecordSchema,
   plan: planRecordSchema.nullable(),
   planRevisions: z.array(planRevisionRecordSchema),
-  agentSession: agentSessionRecordSchema.nullable()
+  agentSession: agentSessionRecordSchema.nullable(),
+  linkedTasks: z.array(linkedTaskRecordSchema)
 });
 export type TaskDetail = z.infer<typeof taskDetailSchema>;
 
@@ -210,11 +223,56 @@ export const updateTaskStatusInputSchema = z.object({
 });
 export type UpdateTaskStatusInput = z.infer<typeof updateTaskStatusInputSchema>;
 
+export const updateTaskInputSchema = z.object({
+  taskId: z.string(),
+  title: z.string().trim().min(3, "Введите минимум 3 символа.").max(120).optional(),
+  description: z.string().trim().min(12, "Опишите задачу хотя бы в 12 символах.").max(4000).optional()
+}).refine(
+  (v) => v.title !== undefined || v.description !== undefined,
+  { message: "Передайте хотя бы одно поле для обновления задачи." }
+);
+export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
+
 export const restorePlanRevisionInputSchema = z.object({
   revisionId: z.string(),
   taskId: z.string()
 });
 export type RestorePlanRevisionInput = z.infer<typeof restorePlanRevisionInputSchema>;
+
+export const linkTaskInputSchema = z.object({
+  sourceTaskId: z.string(),
+  targetTaskId: z.string(),
+  comment: z.string().max(500).default("")
+}).refine(
+  (v) => v.sourceTaskId !== v.targetTaskId,
+  { message: "Нельзя привязать задачу к самой себе." }
+);
+export type LinkTaskInput = z.infer<typeof linkTaskInputSchema>;
+
+export const unlinkTaskInputSchema = z.object({
+  linkId: z.string(),
+  taskId: z.string()
+});
+export type UnlinkTaskInput = z.infer<typeof unlinkTaskInputSchema>;
+
+export const promptOverrideRecordSchema = z.object({
+  id: z.string(),
+  template: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+export type PromptOverrideRecord = z.infer<typeof promptOverrideRecordSchema>;
+
+export const upsertPromptOverrideInputSchema = z.object({
+  id: z.string().min(1),
+  template: z.string().min(1, "Шаблон не может быть пустым.").max(8_000)
+});
+export type UpsertPromptOverrideInput = z.infer<typeof upsertPromptOverrideInputSchema>;
+
+export const deletePromptOverrideInputSchema = z.object({
+  id: z.string().min(1)
+});
+export type DeletePromptOverrideInput = z.infer<typeof deletePromptOverrideInputSchema>;
 
 export const desktopDataChangeEventSchema = z.object({
   projectId: z.string().nullable(),
@@ -226,9 +284,12 @@ export const desktopDataChangeEventSchema = z.object({
     "create-project",
     "create-task",
     "delete-task",
+    "link-task",
     "restore-plan-revision",
     "save-plan",
+    "unlink-task",
     "update-project-profile",
+    "update-task",
     "update-task-status"
   ]),
   taskId: z.string().nullable()
@@ -242,16 +303,24 @@ export interface DesktopApi {
   consolidatePlanDiscussion(input: ConsolidatePlanDiscussionInput): Promise<TaskDetail>;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   createTask(input: CreateTaskInput): Promise<TaskDetail>;
+  deletePromptOverride(input: DeletePromptOverrideInput): Promise<void>;
   deleteTask(taskId: string): Promise<DeleteTaskResult>;
+  exportData(): Promise<{ filePath: string } | null>;
   getHealth(): Promise<AppHealthSnapshot>;
   getProject(projectId: string): Promise<ProjectRecord | null>;
   getTaskDetail(taskId: string): Promise<TaskDetail>;
+  importData(): Promise<void>;
+  linkTask(input: LinkTaskInput): Promise<TaskDetail>;
+  listPromptOverrides(): Promise<PromptOverrideRecord[]>;
   listProjects(): Promise<ProjectRecord[]>;
   listTasks(): Promise<TaskRecord[]>;
   onDataChanged(listener: (event: DesktopDataChangeEvent) => void): () => void;
   onFocusTask(listener: (taskId: string) => void): () => void;
   restorePlanRevision(input: RestorePlanRevisionInput): Promise<TaskDetail>;
   savePlan(input: SavePlanInput): Promise<TaskDetail>;
+  unlinkTask(input: UnlinkTaskInput): Promise<TaskDetail>;
   updateProjectProfile(input: UpdateProjectProfileInput): Promise<ProjectRecord>;
+  updateTask(input: UpdateTaskInput): Promise<TaskDetail>;
   updateTaskStatus(input: UpdateTaskStatusInput): Promise<TaskDetail>;
+  upsertPromptOverride(input: UpsertPromptOverrideInput): Promise<PromptOverrideRecord>;
 }

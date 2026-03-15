@@ -12,16 +12,24 @@ const channels = {
   consolidatePlanDiscussion: "app:consolidate-plan-discussion",
   createProject: "app:create-project",
   createTask: "app:create-task",
+  deletePromptOverride: "app:delete-prompt-override",
   deleteTask: "app:delete-task",
+  exportData: "app:export-data",
   getHealth: "app:get-health",
   getProject: "app:get-project",
   getTaskDetail: "app:get-task-detail",
+  importData: "app:import-data",
+  linkTask: "app:link-task",
+  listPromptOverrides: "app:list-prompt-overrides",
   listProjects: "app:list-projects",
   listTasks: "app:list-tasks",
   restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
+  unlinkTask: "app:unlink-task",
+  updateTask: "app:update-task",
   updateTaskStatus: "app:update-task-status",
-  updateProjectProfile: "app:update-project-profile"
+  updateProjectProfile: "app:update-project-profile",
+  upsertPromptOverride: "app:upsert-prompt-override"
 } as const;
 
 async function withIpcErrors<T>(action: () => Promise<T> | T): Promise<T> {
@@ -34,7 +42,9 @@ async function withIpcErrors<T>(action: () => Promise<T> | T): Promise<T> {
 }
 
 export function registerIpcHandlers(ipcMain: IpcMain, appService: AppService): void {
+  ipcMain.handle(channels.exportData, () => withIpcErrors(() => appService.exportData()));
   ipcMain.handle(channels.getHealth, () => withIpcErrors(() => appService.getHealthSnapshot()));
+  ipcMain.handle(channels.importData, () => withIpcErrors(() => appService.importData()));
   ipcMain.handle(channels.listProjects, () => withIpcErrors(() => appService.listProjects()));
   ipcMain.handle(channels.listTasks, () => withIpcErrors(() => appService.listTasks()));
   ipcMain.handle(channels.getProject, (_event, projectId: string) =>
@@ -70,10 +80,28 @@ export function registerIpcHandlers(ipcMain: IpcMain, appService: AppService): v
   ipcMain.handle(channels.consolidatePlanDiscussion, (_event, input) =>
     withIpcErrors(() => appService.consolidatePlanDiscussion(input))
   );
+  ipcMain.handle(channels.updateTask, (_event, input) =>
+    withIpcErrors(() => appService.updateTask(input))
+  );
   ipcMain.handle(channels.updateTaskStatus, (_event, input) =>
     withIpcErrors(() => appService.updateTaskStatus(input))
   );
   ipcMain.handle(channels.updateProjectProfile, (_event, input) =>
     withIpcErrors(() => appService.updateProjectProfile(input))
+  );
+  ipcMain.handle(channels.linkTask, (_event, input) =>
+    withIpcErrors(() => appService.linkTask(input))
+  );
+  ipcMain.handle(channels.unlinkTask, (_event, input) =>
+    withIpcErrors(() => appService.unlinkTask(input))
+  );
+  ipcMain.handle(channels.listPromptOverrides, () =>
+    withIpcErrors(() => appService.listPromptOverrides())
+  );
+  ipcMain.handle(channels.upsertPromptOverride, (_event, input) =>
+    withIpcErrors(() => appService.upsertPromptOverride(input))
+  );
+  ipcMain.handle(channels.deletePromptOverride, (_event, input) =>
+    withIpcErrors(() => appService.deletePromptOverride(input))
   );
 }

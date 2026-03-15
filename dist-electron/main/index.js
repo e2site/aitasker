@@ -1,5 +1,5 @@
 // src/main/index.ts
-import { dirname, join as join2 } from "path";
+import { dirname, join as join3 } from "path";
 import { fileURLToPath } from "url";
 
 // src/main/agents/agent-registry.ts
@@ -62,11 +62,26 @@ var agentSessionsTable = sqliteTable("agent_sessions", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
 });
+var taskLinksTable = sqliteTable("task_links", {
+  id: text("id").primaryKey(),
+  sourceTaskId: text("source_task_id").notNull().references(() => tasksTable.id, { onDelete: "cascade" }),
+  targetTaskId: text("target_task_id").notNull().references(() => tasksTable.id, { onDelete: "cascade" }),
+  comment: text("comment").notNull().default(""),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull()
+});
+var promptOverridesTable = sqliteTable("prompt_overrides", {
+  id: text("id").primaryKey(),
+  template: text("template").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
 var databaseSchema = {
   agentSessionsTable,
   planRevisionsTable,
   plansTable,
   projectsTable,
+  promptOverridesTable,
+  taskLinksTable,
   tasksTable
 };
 
@@ -198,6 +213,21 @@ function bootstrapDatabase(sqlite) {
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS task_links (
+      id TEXT PRIMARY KEY NOT NULL,
+      source_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      target_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      comment TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS prompt_overrides (
+      id TEXT PRIMARY KEY NOT NULL,
+      template TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
   if (!hasColumn(sqlite, "tasks", "project_id")) {
     sqlite.exec(`ALTER TABLE tasks ADD COLUMN project_id TEXT;`);
@@ -278,6 +308,8 @@ function bootstrapDatabase(sqlite) {
     CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
     CREATE INDEX IF NOT EXISTS idx_plan_revisions_task_id ON plan_revisions(task_id);
     CREATE INDEX IF NOT EXISTS idx_plan_revisions_plan_id ON plan_revisions(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_task_links_source_task_id ON task_links(source_task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_links_target_task_id ON task_links(target_task_id);
   `);
 }
 
@@ -525,9 +557,116 @@ var ProjectRepository = class {
   }
 };
 
-// src/main/db/task-repository.ts
+// src/main/db/prompt-override-repository.ts
+import { eq as eq4 } from "drizzle-orm";
+var PromptOverrideRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  upsert(id, template) {
+    const now = Date.now();
+    const existing = this.db.select().from(promptOverridesTable).where(eq4(promptOverridesTable.id, id)).all();
+    if (existing.length > 0) {
+      this.db.update(promptOverridesTable).set({ template, updatedAt: new Date(now) }).where(eq4(promptOverridesTable.id, id)).run();
+    } else {
+      this.db.insert(promptOverridesTable).values({ id, template, createdAt: new Date(now), updatedAt: new Date(now) }).run();
+    }
+    return this.toRecord(id, template, existing[0]?.createdAt ?? new Date(now), new Date(now));
+  }
+  getById(id) {
+    const rows = this.db.select().from(promptOverridesTable).where(eq4(promptOverridesTable.id, id)).all();
+    if (rows.length === 0) return null;
+    const row = rows[0];
+    return this.toRecord(row.id, row.template, row.createdAt, row.updatedAt);
+  }
+  list() {
+    return this.db.select().from(promptOverridesTable).all().map((row) => this.toRecord(row.id, row.template, row.createdAt, row.updatedAt));
+  }
+  delete(id) {
+    const result = this.db.delete(promptOverridesTable).where(eq4(promptOverridesTable.id, id)).run();
+    return result.changes > 0;
+  }
+  toRecord(id, template, createdAt, updatedAt) {
+    return {
+      id,
+      template,
+      createdAt: createdAt.toISOString(),
+      updatedAt: updatedAt.toISOString()
+    };
+  }
+};
+
+// src/main/db/task-link-repository.ts
 import { randomUUID as randomUUID4 } from "crypto";
-import { and, desc as desc3, eq as eq4 } from "drizzle-orm";
+import { eq as eq5, or } from "drizzle-orm";
+var TaskLinkRepository = class {
+  constructor(database) {
+    this.database = database;
+  }
+  async create(input) {
+    const id = randomUUID4();
+    const now = /* @__PURE__ */ new Date();
+    this.database.insert(taskLinksTable).values({
+      id,
+      sourceTaskId: input.sourceTaskId,
+      targetTaskId: input.targetTaskId,
+      comment: input.comment,
+      createdAt: now
+    }).run();
+    return {
+      id,
+      sourceTaskId: input.sourceTaskId,
+      targetTaskId: input.targetTaskId,
+      comment: input.comment,
+      createdAt: now.toISOString()
+    };
+  }
+  async listByTaskId(taskId) {
+    const rows = this.database.select({
+      linkId: taskLinksTable.id,
+      sourceTaskId: taskLinksTable.sourceTaskId,
+      targetTaskId: taskLinksTable.targetTaskId,
+      comment: taskLinksTable.comment,
+      createdAt: taskLinksTable.createdAt,
+      linkedTaskId: tasksTable.id,
+      linkedTaskTitle: tasksTable.title,
+      linkedTaskStatus: tasksTable.status,
+      linkedProjectName: projectsTable.name
+    }).from(taskLinksTable).innerJoin(
+      tasksTable,
+      or(
+        eq5(taskLinksTable.targetTaskId, tasksTable.id),
+        eq5(taskLinksTable.sourceTaskId, tasksTable.id)
+      )
+    ).innerJoin(projectsTable, eq5(tasksTable.projectId, projectsTable.id)).where(or(eq5(taskLinksTable.sourceTaskId, taskId), eq5(taskLinksTable.targetTaskId, taskId))).all();
+    const result = [];
+    for (const row of rows) {
+      if (row.linkedTaskId === taskId) {
+        continue;
+      }
+      const direction = row.sourceTaskId === taskId ? "outgoing" : "incoming";
+      result.push({
+        id: row.linkId,
+        taskId: row.linkedTaskId,
+        title: row.linkedTaskTitle,
+        status: row.linkedTaskStatus,
+        projectName: row.linkedProjectName,
+        comment: row.comment,
+        direction,
+        createdAt: row.createdAt.toISOString()
+      });
+    }
+    return result;
+  }
+  async delete(linkId) {
+    const result = this.database.delete(taskLinksTable).where(eq5(taskLinksTable.id, linkId)).run();
+    return result.changes > 0;
+  }
+};
+
+// src/main/db/task-repository.ts
+import { randomUUID as randomUUID5 } from "crypto";
+import { and, desc as desc3, eq as eq6 } from "drizzle-orm";
 function normalizeTaskStatus(status) {
   switch (status) {
     case "draft":
@@ -564,7 +703,7 @@ var TaskRepository = class {
   }
   async create(input) {
     const now = /* @__PURE__ */ new Date();
-    const id = randomUUID4();
+    const id = randomUUID5();
     this.database.insert(tasksTable).values({
       id,
       projectId: input.projectId,
@@ -590,13 +729,13 @@ var TaskRepository = class {
       status: tasksTable.status,
       createdAt: tasksTable.createdAt,
       updatedAt: tasksTable.updatedAt
-    }).from(tasksTable).innerJoin(projectsTable, eq4(tasksTable.projectId, projectsTable.id)).where(
-      projectId ? and(eq4(tasksTable.id, taskId), eq4(tasksTable.projectId, projectId)) : eq4(tasksTable.id, taskId)
+    }).from(tasksTable).innerJoin(projectsTable, eq6(tasksTable.projectId, projectsTable.id)).where(
+      projectId ? and(eq6(tasksTable.id, taskId), eq6(tasksTable.projectId, projectId)) : eq6(tasksTable.id, taskId)
     ).get();
     return row ? toTaskRecord(row) : null;
   }
   async delete(taskId) {
-    const result = this.database.delete(tasksTable).where(eq4(tasksTable.id, taskId)).run();
+    const result = this.database.delete(tasksTable).where(eq6(tasksTable.id, taskId)).run();
     return result.changes > 0;
   }
   async list(projectId) {
@@ -609,19 +748,22 @@ var TaskRepository = class {
       status: tasksTable.status,
       createdAt: tasksTable.createdAt,
       updatedAt: tasksTable.updatedAt
-    }).from(tasksTable).innerJoin(projectsTable, eq4(tasksTable.projectId, projectsTable.id)).where(projectId ? eq4(tasksTable.projectId, projectId) : void 0).orderBy(desc3(tasksTable.updatedAt)).all();
+    }).from(tasksTable).innerJoin(projectsTable, eq6(tasksTable.projectId, projectsTable.id)).where(projectId ? eq6(tasksTable.projectId, projectId) : void 0).orderBy(desc3(tasksTable.updatedAt)).all();
     return rows.map(toTaskRecord);
   }
   async touch(taskId) {
     this.database.update(tasksTable).set({
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq4(tasksTable.id, taskId)).run();
+    }).where(eq6(tasksTable.id, taskId)).run();
+  }
+  async update(taskId, fields) {
+    this.database.update(tasksTable).set({ ...fields, updatedAt: /* @__PURE__ */ new Date() }).where(eq6(tasksTable.id, taskId)).run();
   }
   async updateStatus(taskId, status) {
     this.database.update(tasksTable).set({
       status,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq4(tasksTable.id, taskId)).run();
+    }).where(eq6(tasksTable.id, taskId)).run();
   }
 };
 
@@ -686,12 +828,23 @@ var agentSessionRecordSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string()
 });
+var linkedTaskRecordSchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  title: z.string(),
+  status: taskStatusSchema,
+  projectName: z.string(),
+  comment: z.string(),
+  direction: z.enum(["outgoing", "incoming"]),
+  createdAt: z.string()
+});
 var taskDetailSchema = z.object({
   project: projectRecordSchema,
   task: taskRecordSchema,
   plan: planRecordSchema.nullable(),
   planRevisions: z.array(planRevisionRecordSchema),
-  agentSession: agentSessionRecordSchema.nullable()
+  agentSession: agentSessionRecordSchema.nullable(),
+  linkedTasks: z.array(linkedTaskRecordSchema)
 });
 var appHealthSnapshotSchema = z.object({
   appName: z.string(),
@@ -772,9 +925,42 @@ var updateTaskStatusInputSchema = z.object({
   taskId: z.string(),
   status: taskStatusSchema
 });
+var updateTaskInputSchema = z.object({
+  taskId: z.string(),
+  title: z.string().trim().min(3, "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043C\u0438\u043D\u0438\u043C\u0443\u043C 3 \u0441\u0438\u043C\u0432\u043E\u043B\u0430.").max(120).optional(),
+  description: z.string().trim().min(12, "\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0437\u0430\u0434\u0430\u0447\u0443 \u0445\u043E\u0442\u044F \u0431\u044B \u0432 12 \u0441\u0438\u043C\u0432\u043E\u043B\u0430\u0445.").max(4e3).optional()
+}).refine(
+  (v) => v.title !== void 0 || v.description !== void 0,
+  { message: "\u041F\u0435\u0440\u0435\u0434\u0430\u0439\u0442\u0435 \u0445\u043E\u0442\u044F \u0431\u044B \u043E\u0434\u043D\u043E \u043F\u043E\u043B\u0435 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F \u0437\u0430\u0434\u0430\u0447\u0438." }
+);
 var restorePlanRevisionInputSchema = z.object({
   revisionId: z.string(),
   taskId: z.string()
+});
+var linkTaskInputSchema = z.object({
+  sourceTaskId: z.string(),
+  targetTaskId: z.string(),
+  comment: z.string().max(500).default("")
+}).refine(
+  (v) => v.sourceTaskId !== v.targetTaskId,
+  { message: "\u041D\u0435\u043B\u044C\u0437\u044F \u043F\u0440\u0438\u0432\u044F\u0437\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443 \u043A \u0441\u0430\u043C\u043E\u0439 \u0441\u0435\u0431\u0435." }
+);
+var unlinkTaskInputSchema = z.object({
+  linkId: z.string(),
+  taskId: z.string()
+});
+var promptOverrideRecordSchema = z.object({
+  id: z.string(),
+  template: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+var upsertPromptOverrideInputSchema = z.object({
+  id: z.string().min(1),
+  template: z.string().min(1, "\u0428\u0430\u0431\u043B\u043E\u043D \u043D\u0435 \u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043F\u0443\u0441\u0442\u044B\u043C.").max(8e3)
+});
+var deletePromptOverrideInputSchema = z.object({
+  id: z.string().min(1)
 });
 var desktopDataChangeEventSchema = z.object({
   projectId: z.string().nullable(),
@@ -786,9 +972,12 @@ var desktopDataChangeEventSchema = z.object({
     "create-project",
     "create-task",
     "delete-task",
+    "link-task",
     "restore-plan-revision",
     "save-plan",
+    "unlink-task",
     "update-project-profile",
+    "update-task",
     "update-task-status"
   ]),
   taskId: z.string().nullable()
@@ -1207,17 +1396,19 @@ function createAppService(dependencies) {
     if (!project) {
       throw new Error(`Project ${task.projectId} was not found.`);
     }
-    const [plan, planRevisions, agentSession] = await Promise.all([
+    const [plan, planRevisions, agentSession, linkedTasks] = await Promise.all([
       dependencies.planRepository.getByTaskId(taskId),
       dependencies.planRepository.listRevisions(taskId),
-      dependencies.agentSessionRepository.getByTaskId(taskId)
+      dependencies.agentSessionRepository.getByTaskId(taskId),
+      dependencies.taskLinkRepository.listByTaskId(taskId)
     ]);
     return {
       project,
       task,
       plan,
       planRevisions,
-      agentSession
+      agentSession,
+      linkedTasks
     };
   };
   const resolveProjectForTask = async (input) => {
@@ -1381,6 +1572,19 @@ function createAppService(dependencies) {
         deletedTaskId: taskId
       };
     },
+    async exportData() {
+      const { dialog } = await import("electron");
+      const result = await dialog.showSaveDialog({
+        title: "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 AITasker",
+        defaultPath: "aitasker-backup.sqlite",
+        filters: [{ name: "SQLite Database", extensions: ["sqlite"] }]
+      });
+      if (result.canceled || !result.filePath) {
+        return null;
+      }
+      await dependencies.sqlite.backup(result.filePath);
+      return { filePath: result.filePath };
+    },
     getHealthSnapshot() {
       return {
         appName: "AITasker",
@@ -1390,6 +1594,22 @@ function createAppService(dependencies) {
         mcpEndpoint: dependencies.getMcpEndpoint(),
         mcpServerRunning: dependencies.isMcpRunning()
       };
+    },
+    async importData() {
+      const { dialog } = await import("electron");
+      const result = await dialog.showOpenDialog({
+        title: "\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 AITasker",
+        filters: [{ name: "SQLite Database", extensions: ["sqlite"] }],
+        properties: ["openFile"]
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return;
+      }
+      const sourcePath = result.filePaths[0];
+      const { copyFileSync } = await import("fs");
+      dependencies.sqlite.pragma("wal_checkpoint(TRUNCATE)");
+      copyFileSync(sourcePath, dependencies.databasePath);
+      dependencies.relaunchApp();
     },
     getProject(projectId) {
       return dependencies.projectRepository.getById(projectId);
@@ -1446,6 +1666,21 @@ function createAppService(dependencies) {
       });
       return getTaskDetail(parsedInput.taskId);
     },
+    async updateTask(input) {
+      const parsedInput = updateTaskInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.taskId);
+      await dependencies.taskRepository.update(parsedInput.taskId, {
+        title: parsedInput.title,
+        description: parsedInput.description
+      });
+      await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "update-task",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
+      return getTaskDetail(parsedInput.taskId);
+    },
     async updateTaskStatus(input) {
       const parsedInput = updateTaskStatusInputSchema.parse(input);
       const detail = await getTaskDetail(parsedInput.taskId);
@@ -1467,6 +1702,50 @@ function createAppService(dependencies) {
         taskId: null
       });
       return project;
+    },
+    async linkTask(input) {
+      const parsedInput = linkTaskInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.sourceTaskId);
+      await dependencies.taskLinkRepository.create({
+        sourceTaskId: parsedInput.sourceTaskId,
+        targetTaskId: parsedInput.targetTaskId,
+        comment: parsedInput.comment
+      });
+      await dependencies.taskRepository.touch(parsedInput.sourceTaskId);
+      await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "link-task",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.sourceTaskId
+      });
+      return getTaskDetail(parsedInput.sourceTaskId);
+    },
+    async unlinkTask(input) {
+      const parsedInput = unlinkTaskInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.taskId);
+      const deleted = await dependencies.taskLinkRepository.delete(parsedInput.linkId);
+      if (!deleted) {
+        throw new Error(`\u0421\u0432\u044F\u0437\u044C ${parsedInput.linkId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430.`);
+      }
+      await dependencies.taskRepository.touch(parsedInput.taskId);
+      await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "unlink-task",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
+      return getTaskDetail(parsedInput.taskId);
+    },
+    async upsertPromptOverride(input) {
+      const parsedInput = upsertPromptOverrideInputSchema.parse(input);
+      return dependencies.promptOverrideRepository.upsert(parsedInput.id, parsedInput.template);
+    },
+    async listPromptOverrides() {
+      return dependencies.promptOverrideRepository.list();
+    },
+    async deletePromptOverride(input) {
+      const parsedInput = deletePromptOverrideInputSchema.parse(input);
+      dependencies.promptOverrideRepository.delete(parsedInput.id);
     }
   };
 }
@@ -1499,16 +1778,24 @@ var channels = {
   consolidatePlanDiscussion: "app:consolidate-plan-discussion",
   createProject: "app:create-project",
   createTask: "app:create-task",
+  deletePromptOverride: "app:delete-prompt-override",
   deleteTask: "app:delete-task",
+  exportData: "app:export-data",
   getHealth: "app:get-health",
   getProject: "app:get-project",
   getTaskDetail: "app:get-task-detail",
+  importData: "app:import-data",
+  linkTask: "app:link-task",
+  listPromptOverrides: "app:list-prompt-overrides",
   listProjects: "app:list-projects",
   listTasks: "app:list-tasks",
   restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
+  unlinkTask: "app:unlink-task",
+  updateTask: "app:update-task",
   updateTaskStatus: "app:update-task-status",
-  updateProjectProfile: "app:update-project-profile"
+  updateProjectProfile: "app:update-project-profile",
+  upsertPromptOverride: "app:upsert-prompt-override"
 };
 async function withIpcErrors(action) {
   try {
@@ -1519,7 +1806,9 @@ async function withIpcErrors(action) {
   }
 }
 function registerIpcHandlers(ipcMain, appService) {
+  ipcMain.handle(channels.exportData, () => withIpcErrors(() => appService.exportData()));
   ipcMain.handle(channels.getHealth, () => withIpcErrors(() => appService.getHealthSnapshot()));
+  ipcMain.handle(channels.importData, () => withIpcErrors(() => appService.importData()));
   ipcMain.handle(channels.listProjects, () => withIpcErrors(() => appService.listProjects()));
   ipcMain.handle(channels.listTasks, () => withIpcErrors(() => appService.listTasks()));
   ipcMain.handle(
@@ -1567,6 +1856,10 @@ function registerIpcHandlers(ipcMain, appService) {
     (_event, input) => withIpcErrors(() => appService.consolidatePlanDiscussion(input))
   );
   ipcMain.handle(
+    channels.updateTask,
+    (_event, input) => withIpcErrors(() => appService.updateTask(input))
+  );
+  ipcMain.handle(
     channels.updateTaskStatus,
     (_event, input) => withIpcErrors(() => appService.updateTaskStatus(input))
   );
@@ -1574,11 +1867,31 @@ function registerIpcHandlers(ipcMain, appService) {
     channels.updateProjectProfile,
     (_event, input) => withIpcErrors(() => appService.updateProjectProfile(input))
   );
+  ipcMain.handle(
+    channels.linkTask,
+    (_event, input) => withIpcErrors(() => appService.linkTask(input))
+  );
+  ipcMain.handle(
+    channels.unlinkTask,
+    (_event, input) => withIpcErrors(() => appService.unlinkTask(input))
+  );
+  ipcMain.handle(
+    channels.listPromptOverrides,
+    () => withIpcErrors(() => appService.listPromptOverrides())
+  );
+  ipcMain.handle(
+    channels.upsertPromptOverride,
+    (_event, input) => withIpcErrors(() => appService.upsertPromptOverride(input))
+  );
+  ipcMain.handle(
+    channels.deletePromptOverride,
+    (_event, input) => withIpcErrors(() => appService.deletePromptOverride(input))
+  );
 }
 
 // src/main/mcp/mcp-http-server.ts
 import { createServer } from "http";
-import { randomUUID as randomUUID5 } from "crypto";
+import { randomUUID as randomUUID6 } from "crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
@@ -2420,7 +2733,7 @@ var McpHttpServer = class {
     if (!sessionId && isInitializeRequest(body)) {
       const server = createMcpServer(this.appService, this.logger);
       const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID5(),
+        sessionIdGenerator: () => randomUUID6(),
         enableJsonResponse: true
       });
       transport.onclose = () => {
@@ -2469,11 +2782,33 @@ var McpHttpServer = class {
   }
 };
 
+// src/main/assets/app-icon-paths.ts
+import { existsSync } from "fs";
+import { join as join2 } from "path";
+function resolveIconPath(app, fileName) {
+  const candidates = [
+    join2(app.getAppPath(), "build", "icons", fileName),
+    join2(process.cwd(), "build", "icons", fileName),
+    join2(process.resourcesPath, "build", "icons", fileName),
+    join2(process.resourcesPath, "app.asar.unpacked", "build", "icons", fileName)
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
+function getWindowIconPath(app) {
+  return resolveIconPath(app, "icon.ico") ?? void 0;
+}
+function getTrayIconPath(app) {
+  return resolveIconPath(app, "icon_tray.png") ?? getWindowIconPath(app);
+}
+
 // src/main/tray/app-tray.ts
 import { Menu, nativeImage, Tray } from "electron";
-var TRAY_ICON_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAH0lEQVQ4T2NkYGD4z8BAAhgHjIJRMApGwSgYBQAACgABBOJFYgAAAABJRU5ErkJggg==";
 function createAppTray(getWindow, app) {
-  const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA_URL);
+  const trayIconPath = getTrayIconPath(app);
+  const icon = trayIconPath ? nativeImage.createFromPath(trayIconPath) : nativeImage.createEmpty();
+  if (icon.isEmpty()) {
+    throw new Error("Tray icon could not be loaded from build/icons/icon_tray.png or build/icons/icon.ico.");
+  }
   const tray = new Tray(icon);
   tray.setToolTip("AITasker");
   const contextMenu = Menu.buildFromTemplate([
@@ -2524,9 +2859,9 @@ function setupWindowHideOnClose(win, platform, app) {
 // src/main/index.ts
 import { Menu as Menu2 } from "electron";
 var CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
-var APP_ROOT = join2(CURRENT_DIR, "..", "..");
-var RENDERER_DIST = join2(APP_ROOT, "dist");
-var PRELOAD_SCRIPT = join2(APP_ROOT, "preload.js");
+var APP_ROOT = join3(CURRENT_DIR, "..", "..");
+var RENDERER_DIST = join3(APP_ROOT, "dist");
+var PRELOAD_SCRIPT = join3(APP_ROOT, "preload.js");
 var VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 var DATA_CHANGED_CHANNEL = "app:data-changed";
 var FOCUS_TASK_CHANNEL = "app:focus-task";
@@ -2568,6 +2903,7 @@ async function sendTaskNotification(event, getWindow) {
 }
 var mainWindow = null;
 async function createMainWindow(runtime) {
+  const windowIconPath = getWindowIconPath(runtime.app);
   mainWindow = new runtime.BrowserWindow({
     width: 1440,
     height: 900,
@@ -2575,6 +2911,7 @@ async function createMainWindow(runtime) {
     minHeight: 760,
     show: false,
     title: "AITasker",
+    icon: windowIconPath,
     webPreferences: {
       preload: PRELOAD_SCRIPT,
       contextIsolation: true,
@@ -2589,7 +2926,7 @@ async function createMainWindow(runtime) {
     mainWindow.webContents.openDevTools({ mode: "detach" });
     return;
   }
-  await mainWindow.loadFile(join2(RENDERER_DIST, "index.html"));
+  await mainWindow.loadFile(join3(RENDERER_DIST, "index.html"));
 }
 function bootstrapMainProcess(runtime) {
   runtime.app.whenReady().then(async () => {
@@ -2597,8 +2934,10 @@ function bootstrapMainProcess(runtime) {
     const databaseContext = createAppDatabase(runtime.app.getPath("userData"));
     const logger = createDevLogger();
     const taskRepository = new TaskRepository(databaseContext.database);
+    const taskLinkRepository = new TaskLinkRepository(databaseContext.database);
     const planRepository = new PlanRepository(databaseContext.database);
     const projectRepository = new ProjectRepository(databaseContext.database);
+    const promptOverrideRepository = new PromptOverrideRepository(databaseContext.database);
     const agentSessionRepository = new AgentSessionRepository(databaseContext.database);
     const agentRegistry = createAgentRegistry();
     let appService;
@@ -2618,6 +2957,13 @@ function bootstrapMainProcess(runtime) {
       planRepository,
       platform: process.platform,
       projectRepository,
+      promptOverrideRepository,
+      relaunchApp: () => {
+        runtime.app.relaunch();
+        runtime.app.exit(0);
+      },
+      sqlite: databaseContext.sqlite,
+      taskLinkRepository,
       taskRepository
     });
     mcpHttpServer = new McpHttpServer(appService, logger);

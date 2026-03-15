@@ -9,12 +9,15 @@ import { AgentSessionRepository } from "./db/agent-session-repository";
 import { createAppDatabase } from "./db/database";
 import { PlanRepository } from "./db/plan-repository";
 import { ProjectRepository } from "./db/project-repository";
+import { PromptOverrideRepository } from "./db/prompt-override-repository";
+import { TaskLinkRepository } from "./db/task-link-repository";
 import { TaskRepository } from "./db/task-repository";
 import { createAppService } from "./services/app-service";
 import type { AppService } from "./services/app-service";
 import { createDevLogger } from "./services/dev-logger";
 import { registerIpcHandlers } from "./ipc/register-ipc-handlers";
 import { McpHttpServer } from "./mcp/mcp-http-server";
+import { getWindowIconPath } from "./assets/app-icon-paths";
 import { createAppTray, setupWindowHideOnClose } from "./tray/app-tray";
 import { Menu } from "electron";
 import type { App, BrowserWindow as BrowserWindowType, IpcMain } from "electron";
@@ -84,6 +87,8 @@ export interface MainProcessRuntime {
 let mainWindow: BrowserWindowType | null = null;
 
 async function createMainWindow(runtime: MainProcessRuntime): Promise<void> {
+  const windowIconPath = getWindowIconPath(runtime.app);
+
   mainWindow = new runtime.BrowserWindow({
     width: 1440,
     height: 900,
@@ -91,6 +96,7 @@ async function createMainWindow(runtime: MainProcessRuntime): Promise<void> {
     minHeight: 760,
     show: false,
     title: "AITasker",
+    icon: windowIconPath,
     webPreferences: {
       preload: PRELOAD_SCRIPT,
       contextIsolation: true,
@@ -117,8 +123,10 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
     const databaseContext = createAppDatabase(runtime.app.getPath("userData"));
     const logger = createDevLogger();
     const taskRepository = new TaskRepository(databaseContext.database);
+    const taskLinkRepository = new TaskLinkRepository(databaseContext.database);
     const planRepository = new PlanRepository(databaseContext.database);
     const projectRepository = new ProjectRepository(databaseContext.database);
+    const promptOverrideRepository = new PromptOverrideRepository(databaseContext.database);
     const agentSessionRepository = new AgentSessionRepository(databaseContext.database);
     const agentRegistry = createAgentRegistry();
     let appService!: AppService;
@@ -139,6 +147,13 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
       planRepository,
       platform: process.platform,
       projectRepository,
+      promptOverrideRepository,
+      relaunchApp: () => {
+        runtime.app.relaunch();
+        runtime.app.exit(0);
+      },
+      sqlite: databaseContext.sqlite,
+      taskLinkRepository,
       taskRepository
     });
     mcpHttpServer = new McpHttpServer(appService, logger);

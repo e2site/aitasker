@@ -15,9 +15,11 @@ import {
   type ManagedPlanComment,
   type ManagedPlanQuestion
 } from "@/shared/plans/managed-plan-content";
-
-type CommentKind = "extension" | "improvement";
-type ThreadKind = CommentKind | "discussion";
+import {
+  buildThreadItems,
+  type CommentKind,
+  type ThreadKind,
+} from "@/renderer/features/plans/build-thread-items";
 
 const KIND_LABEL: Record<CommentKind, string> = {
   extension: "расширение",
@@ -118,16 +120,8 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
     props.isAppendingPlanImprovement ||
     props.isAnsweringPlanQuestion;
 
-  // Единый хронологический тред
-  const allComments: (ManagedPlanComment & { kind: ThreadKind })[] = [
-    ...parsedPlan.discussion.map((c) => ({ ...c, kind: "discussion" as const })),
-    ...parsedPlan.extensions.map((c) => ({ ...c, kind: "extension" as const })),
-    ...parsedPlan.improvements.map((c) => ({ ...c, kind: "improvement" as const })),
-  ].sort((a, b) => {
-    if (!a.createdAt) return 1;
-    if (!b.createdAt) return -1;
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-  });
+  // Единый хронологический тред с группировкой пар вопрос-ответ
+  const threadItems = buildThreadItems(parsedPlan);
 
   useEffect(() => {
     setSelectedRevisionId("");
@@ -368,76 +362,76 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
 
                 {/* Тред сообщений */}
                 <div className="space-y-2">
-                  {allComments.length === 0 && parsedPlan.questions.length === 0 ? (
+                  {threadItems.length === 0 && parsedPlan.questions.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
                       Обсуждений пока нет.
                     </div>
                   ) : (
-                    allComments.map((comment) => (
-                      <article
-                        key={comment.id}
-                        className={`plan-thread-message ${
-                          comment.author === "agent"
-                            ? "plan-thread-message--agent"
-                            : "plan-thread-message--human"
-                        }`}
-                      >
-                        <div className="plan-thread-message__meta">
-                          <div className="flex items-center gap-2">
-                            <span className="plan-thread-message__author">
-                              {comment.author === "agent" ? "AI агент" : "Вы"}
-                            </span>
-                            {comment.kind === "discussion" ? (
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES[comment.kind]}`}
-                              >
-                                обсуждение
-                              </span>
-                            ) : (
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES[comment.kind]}`}
-                              >
-                                {KIND_LABEL[comment.kind]}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {comment.kind !== "discussion" ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 w-8 p-0"
-                                title="Скопировать prompt для AI агента"
-                                onClick={async () => {
-                                  if (comment.kind === "discussion") {
-                                    return;
-                                  }
+                    threadItems.map((item) => {
+                      if (item.type === "qa-pair") {
+                        return (
+                          <QAPairCard
+                            key={item.question.id}
+                            question={item.question}
+                            answer={item.answer}
+                          />
+                        );
+                      }
 
-                                  const copied = await copyText(
-                                    buildCommentAgentPrompt(props.detail, comment.kind, comment.id)
-                                  );
-
-                                  if (copied) {
-                                    setCopiedCommentPromptId(comment.id);
-                                  }
-                                }}
+                      const { comment, kind } = item;
+                      return (
+                        <article
+                          key={comment.id}
+                          className={`plan-thread-message ${
+                            comment.author === "agent"
+                              ? "plan-thread-message--agent"
+                              : "plan-thread-message--human"
+                          }`}
+                        >
+                          <div className="plan-thread-message__meta">
+                            <div className="flex items-center gap-2">
+                              <span className="plan-thread-message__author">
+                                {comment.author === "agent" ? "AI агент" : "Вы"}
+                              </span>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES[kind]}`}
                               >
-                                <Copy className="size-4" />
-                              </Button>
-                            ) : null}
-                            <span>
-                              {copiedCommentPromptId === comment.id
-                                ? "prompt скопирован"
-                                : formatCommentDate(comment.createdAt)}
-                            </span>
+                                {kind === "discussion" ? "обсуждение" : KIND_LABEL[kind as CommentKind]}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {kind !== "discussion" ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 w-8 p-0"
+                                  title="Скопировать prompt для AI агента"
+                                  onClick={async () => {
+                                    const copied = await copyText(
+                                      buildCommentAgentPrompt(props.detail, kind as CommentKind, comment.id)
+                                    );
+                                    if (copied) {
+                                      setCopiedCommentPromptId(comment.id);
+                                    }
+                                  }}
+                                >
+                                  <Copy className="size-4" />
+                                </Button>
+                              ) : null}
+                              <span>
+                                {copiedCommentPromptId === comment.id
+                                  ? "prompt скопирован"
+                                  : formatCommentDate(comment.createdAt)}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                        <div className="plan-thread-message__body">
-                          <MarkdownPlanViewer contentMd={comment.content} />
-                        </div>
-                      </article>
-                    ))
+                          <div className="plan-thread-message__body">
+                            <MarkdownPlanViewer contentMd={comment.content} />
+                          </div>
+                        </article>
+                      );
+                    })
                   )}
                 </div>
 
@@ -562,5 +556,45 @@ function QuestionCard(props: QuestionCardProps) {
         </Button>
       </div>
     </article>
+  );
+}
+
+interface QAPairCardProps {
+  question: ManagedPlanComment;
+  answer: ManagedPlanComment;
+}
+
+function QAPairCard({ question, answer }: QAPairCardProps) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
+      <article className="plan-thread-message plan-thread-message--agent border-b border-slate-200">
+        <div className="plan-thread-message__meta">
+          <div className="flex items-center gap-2">
+            <span className="plan-thread-message__author">AI агент</span>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES.discussion}`}>
+              вопрос
+            </span>
+          </div>
+          <span className="text-xs text-slate-400">{formatCommentDate(question.createdAt)}</span>
+        </div>
+        <div className="plan-thread-message__body">
+          <MarkdownPlanViewer contentMd={question.content} />
+        </div>
+      </article>
+      <article className="plan-thread-message plan-thread-message--human">
+        <div className="plan-thread-message__meta">
+          <div className="flex items-center gap-2">
+            <span className="plan-thread-message__author">Вы</span>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES.discussion}`}>
+              ответ
+            </span>
+          </div>
+          <span className="text-xs text-slate-400">{formatCommentDate(answer.createdAt)}</span>
+        </div>
+        <div className="plan-thread-message__body">
+          <MarkdownPlanViewer contentMd={answer.content} />
+        </div>
+      </article>
+    </div>
   );
 }

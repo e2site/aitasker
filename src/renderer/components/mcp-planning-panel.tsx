@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy, Workflow } from "lucide-react";
 import type { TaskDetail } from "@/shared/contracts/desktop-api";
 import { buildMcpPromptPresets } from "@/renderer/components/mcp-prompt-presets";
+import { usePromptOverridesQuery } from "@/renderer/features/prompts/use-prompt-override-queries";
 import { Button } from "@/renderer/components/ui/button";
 
 export interface McpPlanningPanelProps {
@@ -24,7 +25,8 @@ async function copyToClipboard(text: string): Promise<boolean> {
 
 export function McpPlanningPanel({ detail }: McpPlanningPanelProps) {
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
-  const promptPresets = buildMcpPromptPresets(detail);
+  const overridesQuery = usePromptOverridesQuery();
+  const promptPresets = buildMcpPromptPresets(detail, overridesQuery.data ?? []);
   const projectProfileReady = detail.project.isProfileComplete;
 
   useEffect(() => {

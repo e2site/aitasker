@@ -3,7 +3,8 @@
 Не входит: Отрисовка списка задач и форма создания задач.
 */
 import { useEffect, useState } from "react";
-import { ChevronDown, Pencil, Eye, Trash2, FilePlus } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, Link, Pencil, Eye, Trash2, FilePlus, X } from "lucide-react";
+import { LinkTaskDialog } from "@/renderer/components/link-task-dialog";
 import { McpPlanningPanel } from "@/renderer/components/mcp-planning-panel";
 import { McpPromptShortcuts } from "@/renderer/components/mcp-prompt-shortcuts";
 import { TaskPlanWorkspace } from "@/renderer/components/task-plan-workspace";
@@ -64,17 +65,23 @@ export interface TaskDetailPanelProps {
   isAppendingPlanExtension: boolean;
   isAppendingPlanImprovement: boolean;
   isDeletingTask: boolean;
+  isLinkingTask: boolean;
   isRestoringRevision: boolean;
   isSavingPlan: boolean;
+  isUnlinkingTask: boolean;
   isUpdatingStatus: boolean;
+  isUpdatingTask: boolean;
   onAnswerPlanQuestion(taskId: string, questionId: string, answer: string): void;
   onAppendPlanExtension(taskId: string, content: string): void;
   onAppendPlanImprovement(taskId: string, content: string): void;
   onDeleteTask(taskId: string): void;
+  onLinkTask(targetTaskId: string, comment: string): void;
   onRestorePlanRevision(taskId: string, revisionId: string): void;
   onSavePlan(taskId: string, contentMd: string): void;
   onSetEditorMode(mode: "view" | "edit"): void;
+  onUnlinkTask(linkId: string): void;
   onUpdateStatus(taskId: string, status: TaskStatus): void;
+  onUpdateTask(taskId: string, fields: { title?: string; description?: string }): void;
 }
 
 function MetaField({ label, value }: { label: string; value: React.ReactNode }) {
@@ -141,10 +148,18 @@ function StatusDropdown({
 export function TaskDetailPanel(props: TaskDetailPanelProps) {
   const [draftPlan, setDraftPlan] = useState("");
   const [activeTab, setActiveTab] = useState<Tab>("plan");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
   useEffect(() => {
     setDraftPlan(props.detail?.plan ? parseManagedPlanContent(props.detail.plan.contentMd).baseContentMd : "");
     setActiveTab("plan");
+    setEditingTitle(false);
+    setEditingDescription(false);
+    setLinkDialogOpen(false);
   }, [props.detail?.plan?.contentMd, props.detail?.task.id]);
 
   if (!props.detail) {
@@ -229,16 +244,83 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
           </div>
         ) : null}
 
-        {/* Заголовок */}
-        <h1 className="mb-2 text-2xl font-semibold tracking-tight text-slate-950">
-          {detail.task.title}
-        </h1>
-
-        {/* Описание */}
-        {detail.task.description ? (
-          <p className="mb-5 max-w-2xl text-sm leading-6 text-slate-600">{detail.task.description}</p>
+        {/* Заголовок — inline-редактируемый */}
+        {editingTitle ? (
+          <input
+            autoFocus
+            className="mb-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-2xl font-semibold tracking-tight text-slate-950 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+            value={titleDraft}
+            disabled={props.isUpdatingTask}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={() => {
+              const trimmed = titleDraft.trim();
+              if (trimmed.length >= 3 && trimmed !== detail.task.title) {
+                props.onUpdateTask(detail.task.id, { title: trimmed });
+              }
+              setEditingTitle(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.currentTarget.blur(); }
+              if (e.key === "Escape") { setEditingTitle(false); }
+            }}
+          />
         ) : (
-          <div className="mb-5" />
+          <h1
+            className="group mb-2 cursor-text rounded-lg px-2 py-1 text-2xl font-semibold tracking-tight text-slate-950 hover:bg-slate-50"
+            onClick={() => {
+              setTitleDraft(detail.task.title);
+              setEditingTitle(true);
+            }}
+            title="Нажмите, чтобы редактировать"
+          >
+            {detail.task.title}
+            <Pencil className="ml-2 inline size-3.5 text-slate-300 opacity-0 transition group-hover:opacity-100" />
+          </h1>
+        )}
+
+        {/* Описание — редактируемое только при статусе «new» */}
+        {detail.task.status === "new" ? (
+          editingDescription ? (
+            <textarea
+              autoFocus
+              className="mb-5 w-full max-w-2xl rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm leading-6 text-slate-600 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              rows={4}
+              value={descriptionDraft}
+              disabled={props.isUpdatingTask}
+              onChange={(e) => setDescriptionDraft(e.target.value)}
+              onBlur={() => {
+                const trimmed = descriptionDraft.trim();
+                if (trimmed.length >= 12 && trimmed !== detail.task.description) {
+                  props.onUpdateTask(detail.task.id, { description: trimmed });
+                }
+                setEditingDescription(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { setEditingDescription(false); }
+                if (e.key === "Enter" && e.ctrlKey) { e.currentTarget.blur(); }
+              }}
+            />
+          ) : (
+            <p
+              className="group mb-5 max-w-2xl cursor-text rounded-lg px-2 py-1 text-sm leading-6 text-slate-600 hover:bg-slate-50"
+              onClick={() => {
+                setDescriptionDraft(detail.task.description);
+                setEditingDescription(true);
+              }}
+              title="Нажмите, чтобы редактировать"
+            >
+              {detail.task.description || (
+                <em className="not-italic text-slate-400">Нажмите, чтобы добавить описание...</em>
+              )}
+              <Pencil className="ml-2 inline size-3 text-slate-300 opacity-0 transition group-hover:opacity-100" />
+            </p>
+          )
+        ) : (
+          detail.task.description ? (
+            <p className="mb-5 max-w-2xl text-sm leading-6 text-slate-600">{detail.task.description}</p>
+          ) : (
+            <div className="mb-5" />
+          )
         )}
 
         {/* Tabs */}
@@ -339,7 +421,70 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
         <MetaField label="SKILL.md" value={detail.project.skillFilePath} />
         <McpPromptShortcuts detail={detail} />
 
+        {/* Связанные задачи */}
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Связанные задачи
+          </span>
+
+          {detail.linkedTasks.length === 0 ? (
+            <p className="text-xs text-slate-400">Нет привязанных задач</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {detail.linkedTasks.map((linked) => (
+                <div
+                  key={linked.id}
+                  className="group flex items-start gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                >
+                  <span className="mt-0.5 shrink-0 text-slate-400">
+                    {linked.direction === "outgoing" ? (
+                      <ArrowRight className="size-3" />
+                    ) : (
+                      <ArrowLeft className="size-3" />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-slate-700 line-clamp-2">{linked.title}</p>
+                    {linked.comment && (
+                      <p className="mt-0.5 text-xs text-slate-400 line-clamp-2">{linked.comment}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    title="Отвязать задачу"
+                    disabled={props.isUnlinkingTask}
+                    onClick={() => props.onUnlinkTask(linked.id)}
+                    className="shrink-0 rounded p-0.5 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100 disabled:pointer-events-none"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setLinkDialogOpen(true)}
+            className="flex items-center gap-1.5 self-start rounded-lg px-2 py-1 text-xs text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            <Link className="size-3" />
+            Привязать задачу
+          </button>
+        </div>
       </aside>
+
+      <LinkTaskDialog
+        currentTaskId={detail.task.id}
+        existingLinkedTaskIds={detail.linkedTasks.map((l) => l.taskId)}
+        isLinking={props.isLinkingTask}
+        isOpen={linkDialogOpen}
+        onClose={() => setLinkDialogOpen(false)}
+        onLink={(targetTaskId, comment) => {
+          props.onLinkTask(targetTaskId, comment);
+          setLinkDialogOpen(false);
+        }}
+      />
     </section>
   );
 }

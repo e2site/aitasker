@@ -19,12 +19,16 @@ import {
 } from "@/renderer/features/plans/use-plan-mutations";
 import { selectedProjectIdAtom } from "@/renderer/features/projects/selected-project-id-state";
 import { useCreateProjectMutation, useProjectsQuery, useUpdateProjectProfileMutation } from "@/renderer/features/projects/use-project-queries";
+import { useExportDataMutation, useImportDataMutation } from "@/renderer/features/data/use-data-mutations";
 import { selectedTaskIdAtom } from "@/renderer/features/tasks/selected-task-id-state";
 import {
   useCreateTaskMutation,
   useDeleteTaskMutation,
+  useLinkTaskMutation,
   useTaskDetailQuery,
   useTasksQuery,
+  useUnlinkTaskMutation,
+  useUpdateTaskMutation,
   useUpdateTaskStatusMutation
 } from "@/renderer/features/tasks/use-task-queries";
 import type { TaskStatus } from "@/shared/contracts/desktop-api";
@@ -51,6 +55,11 @@ export function HomePage() {
   const restorePlanRevisionMutation = useRestorePlanRevisionMutation();
   const appendPlanExtensionMutation = useAppendPlanExtensionMutation();
   const appendPlanImprovementMutation = useAppendPlanImprovementMutation();
+  const updateTaskMutation = useUpdateTaskMutation();
+  const linkTaskMutation = useLinkTaskMutation();
+  const unlinkTaskMutation = useUnlinkTaskMutation();
+  const exportDataMutation = useExportDataMutation();
+  const importDataMutation = useImportDataMutation();
 
   const [selectedProjectId, setSelectedProjectId] = useAtom(selectedProjectIdAtom);
   const [selectedTaskId, setSelectedTaskId] = useAtom(selectedTaskIdAtom);
@@ -109,6 +118,9 @@ export function HomePage() {
   const anyError =
     createTaskMutation.error ||
     deleteTaskMutation.error ||
+    linkTaskMutation.error ||
+    unlinkTaskMutation.error ||
+    updateTaskMutation.error ||
     updateTaskStatusMutation.error ||
     savePlanMutation.error ||
     answerPlanQuestionMutation.error ||
@@ -116,11 +128,16 @@ export function HomePage() {
     appendPlanExtensionMutation.error ||
     appendPlanImprovementMutation.error ||
     updateProjectProfileMutation.error ||
-    createProjectMutation.error;
+    createProjectMutation.error ||
+    exportDataMutation.error ||
+    importDataMutation.error;
 
   const errorMessage =
     createTaskMutation.error?.message ||
     deleteTaskMutation.error?.message ||
+    linkTaskMutation.error?.message ||
+    unlinkTaskMutation.error?.message ||
+    updateTaskMutation.error?.message ||
     updateTaskStatusMutation.error?.message ||
     savePlanMutation.error?.message ||
     answerPlanQuestionMutation.error?.message ||
@@ -128,7 +145,9 @@ export function HomePage() {
     appendPlanExtensionMutation.error?.message ||
     appendPlanImprovementMutation.error?.message ||
     updateProjectProfileMutation.error?.message ||
-    createProjectMutation.error?.message;
+    createProjectMutation.error?.message ||
+    exportDataMutation.error?.message ||
+    importDataMutation.error?.message;
 
   return (
     <AppShell>
@@ -139,6 +158,8 @@ export function HomePage() {
           filteredCount={filteredTasks.length}
           isCreating={createTaskMutation.isPending}
           isCreatingProject={createProjectMutation.isPending}
+          isExportingData={exportDataMutation.isPending}
+          isImportingData={importDataMutation.isPending}
           isUpdatingProject={updateProjectProfileMutation.isPending}
           onCreate={(input) => {
             createTaskMutation.mutate(input, {
@@ -156,6 +177,8 @@ export function HomePage() {
               }
             });
           }}
+          onExportData={() => exportDataMutation.mutate()}
+          onImportData={() => importDataMutation.mutate()}
           onSelectProject={(projectId) => {
             setSelectedProjectId(projectId);
             setEditorMode("view");
@@ -260,6 +283,9 @@ export function HomePage() {
                   isDeletingTask={deleteTaskMutation.isPending}
                   isRestoringRevision={restorePlanRevisionMutation.isPending}
                   isSavingPlan={savePlanMutation.isPending}
+                  isLinkingTask={linkTaskMutation.isPending}
+                  isUnlinkingTask={unlinkTaskMutation.isPending}
+                  isUpdatingTask={updateTaskMutation.isPending}
                   isUpdatingStatus={updateTaskStatusMutation.isPending}
                   onAppendPlanExtension={(taskId, content) => {
                     appendPlanExtensionMutation.mutate({ taskId, content, author: "human" });
@@ -300,6 +326,17 @@ export function HomePage() {
                     );
                   }}
                   onSetEditorMode={setEditorMode}
+                  onLinkTask={(targetTaskId, comment) => {
+                    if (!selectedTaskId) return;
+                    linkTaskMutation.mutate({ sourceTaskId: selectedTaskId, targetTaskId, comment });
+                  }}
+                  onUnlinkTask={(linkId) => {
+                    if (!selectedTaskId) return;
+                    unlinkTaskMutation.mutate({ linkId, taskId: selectedTaskId });
+                  }}
+                  onUpdateTask={(taskId, fields) => {
+                    updateTaskMutation.mutate({ taskId, ...fields });
+                  }}
                   onUpdateStatus={(taskId, status) => {
                     updateTaskStatusMutation.mutate({ taskId, status });
                   }}

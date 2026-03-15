@@ -36,6 +36,7 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "build/icons/**/*",
       "main.js",
       "preload.js",
       "package.json"
@@ -44,6 +45,7 @@
       "node_modules/better-sqlite3/**/*"
     ],
     "win": {
+      "icon": "build/icons/icon.ico",
       "signAndEditExecutable": false,
       "verifyUpdateCodeSignature": false,
       "target": [

@@ -68,10 +68,31 @@ export const agentSessionsTable = sqliteTable("agent_sessions", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
 });
 
+export const taskLinksTable = sqliteTable("task_links", {
+  id: text("id").primaryKey(),
+  sourceTaskId: text("source_task_id")
+    .notNull()
+    .references(() => tasksTable.id, { onDelete: "cascade" }),
+  targetTaskId: text("target_task_id")
+    .notNull()
+    .references(() => tasksTable.id, { onDelete: "cascade" }),
+  comment: text("comment").notNull().default(""),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull()
+});
+
+export const promptOverridesTable = sqliteTable("prompt_overrides", {
+  id: text("id").primaryKey(),
+  template: text("template").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+
 export const databaseSchema = {
   agentSessionsTable,
   planRevisionsTable,
   plansTable,
   projectsTable,
+  promptOverridesTable,
+  taskLinksTable,
   tasksTable
 };

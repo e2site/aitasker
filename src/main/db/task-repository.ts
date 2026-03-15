@@ -147,6 +147,14 @@ export class TaskRepository {
       .run();
   }
 
+  async update(taskId: string, fields: { title?: string; description?: string }): Promise<void> {
+    this.database
+      .update(tasksTable)
+      .set({ ...fields, updatedAt: new Date() })
+      .where(eq(tasksTable.id, taskId))
+      .run();
+  }
+
   async updateStatus(taskId: string, status: TaskStatus): Promise<void> {
     this.database
       .update(tasksTable)

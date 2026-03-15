@@ -1,16 +1,18 @@
 /*
 Назначение: Создаёт иконку приложения в системном трее с контекстным меню и скрытием окна вместо закрытия.
-Не входит: Отправка уведомлений и IPC-каналы.
+Не входит: Отправка уведомлений, IPC-каналы и определение путей к файловым иконкам.
 */
 import { App, BrowserWindow, Menu, nativeImage, Tray } from "electron";
-
-// Minimal 16x16 blue PNG (solid #3b82f6)
-const TRAY_ICON_DATA_URL =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAH0lEQVQ4T2" +
-  "NkYGD4z8BAAhgHjIJRMApGwSgYBQAACgABBOJFYgAAAABJRU5ErkJggg==";
+import { getTrayIconPath } from "../assets/app-icon-paths";
 
 export function createAppTray(getWindow: () => BrowserWindow | null, app: App): Tray {
-  const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA_URL);
+  const trayIconPath = getTrayIconPath(app);
+  const icon = trayIconPath ? nativeImage.createFromPath(trayIconPath) : nativeImage.createEmpty();
+
+  if (icon.isEmpty()) {
+    throw new Error("Tray icon could not be loaded from build/icons/icon_tray.png or build/icons/icon.ico.");
+  }
+
   const tray = new Tray(icon);
   tray.setToolTip("AITasker");
 

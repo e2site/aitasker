@@ -6,17 +6,25 @@ var channels = {
   consolidatePlanDiscussion: "app:consolidate-plan-discussion",
   createProject: "app:create-project",
   createTask: "app:create-task",
+  deletePromptOverride: "app:delete-prompt-override",
   deleteTask: "app:delete-task",
+  exportData: "app:export-data",
   getHealth: "app:get-health",
   getProject: "app:get-project",
   getTaskDetail: "app:get-task-detail",
+  importData: "app:import-data",
+  linkTask: "app:link-task",
+  listPromptOverrides: "app:list-prompt-overrides",
   listProjects: "app:list-projects",
   listTasks: "app:list-tasks",
   onDataChanged: "app:data-changed",
   restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
+  unlinkTask: "app:unlink-task",
+  updateTask: "app:update-task",
   updateTaskStatus: "app:update-task-status",
-  updateProjectProfile: "app:update-project-profile"
+  updateProjectProfile: "app:update-project-profile",
+  upsertPromptOverride: "app:upsert-prompt-override"
 };
 function registerDesktopApi(runtime) {
   const desktopApi = {
@@ -41,6 +49,9 @@ function registerDesktopApi(runtime) {
     deleteTask(taskId) {
       return runtime.ipcRenderer.invoke(channels.deleteTask, taskId);
     },
+    exportData() {
+      return runtime.ipcRenderer.invoke(channels.exportData);
+    },
     getHealth() {
       return runtime.ipcRenderer.invoke(channels.getHealth);
     },
@@ -49,6 +60,9 @@ function registerDesktopApi(runtime) {
     },
     getTaskDetail(taskId) {
       return runtime.ipcRenderer.invoke(channels.getTaskDetail, taskId);
+    },
+    importData() {
+      return runtime.ipcRenderer.invoke(channels.importData);
     },
     listProjects() {
       return runtime.ipcRenderer.invoke(channels.listProjects);
@@ -85,6 +99,24 @@ function registerDesktopApi(runtime) {
     },
     updateProjectProfile(input) {
       return runtime.ipcRenderer.invoke(channels.updateProjectProfile, input);
+    },
+    updateTask(input) {
+      return runtime.ipcRenderer.invoke(channels.updateTask, input);
+    },
+    linkTask(input) {
+      return runtime.ipcRenderer.invoke(channels.linkTask, input);
+    },
+    unlinkTask(input) {
+      return runtime.ipcRenderer.invoke(channels.unlinkTask, input);
+    },
+    listPromptOverrides() {
+      return runtime.ipcRenderer.invoke(channels.listPromptOverrides);
+    },
+    upsertPromptOverride(input) {
+      return runtime.ipcRenderer.invoke(channels.upsertPromptOverride, input);
+    },
+    deletePromptOverride(input) {
+      return runtime.ipcRenderer.invoke(channels.deletePromptOverride, input);
     }
   };
   runtime.contextBridge.exposeInMainWorld("desktop", desktopApi);

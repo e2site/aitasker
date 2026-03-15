@@ -3,7 +3,7 @@
 Не входит: Отрисовка компонентов и локальное UI-состояние.
 */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CreateTaskInput, UpdateTaskStatusInput } from "@/shared/contracts/desktop-api";
+import type { CreateTaskInput, LinkTaskInput, UnlinkTaskInput, UpdateTaskInput, UpdateTaskStatusInput } from "@/shared/contracts/desktop-api";
 
 export function useTasksQuery() {
   return useQuery({
@@ -45,6 +45,18 @@ export function useDeleteTaskMutation() {
   });
 }
 
+export function useUpdateTaskMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: UpdateTaskInput) => window.desktop.updateTask(input),
+    onSuccess: async (detail) => {
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.setQueryData(["task-detail", detail.task.id], detail);
+    }
+  });
+}
+
 export function useUpdateTaskStatusMutation() {
   const queryClient = useQueryClient();
 
@@ -53,6 +65,30 @@ export function useUpdateTaskStatusMutation() {
     onSuccess: async (detail) => {
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.setQueryData(["task-detail", detail.task.id], detail);
+    }
+  });
+}
+
+export function useLinkTaskMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: LinkTaskInput) => window.desktop.linkTask(input),
+    onSuccess: async (detail) => {
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.setQueryData(["task-detail", detail.task.id], detail);
+    }
+  });
+}
+
+export function useUnlinkTaskMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: UnlinkTaskInput) => window.desktop.unlinkTask(input),
+    onSuccess: async (detail) => {
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.setQueryData(["task-detail", detail.task.id], detail);
     }
   });

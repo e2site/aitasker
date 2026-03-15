@@ -131,6 +131,25 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
     const agentRegistry = createAgentRegistry();
     let appService!: AppService;
     let mcpHttpServer: McpHttpServer | null = null;
+    let isShuttingDown = false;
+
+    const shutdownApp = async () => {
+      if (isShuttingDown) {
+        return;
+      }
+
+      isShuttingDown = true;
+
+      try {
+        await mcpHttpServer?.stop();
+      } catch (error) {
+        logger.error("app", "Failed to stop MCP server during shutdown", {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      } finally {
+        runtime.app.exit(0);
+      }
+    };
 
     appService = createAppService({
       agentProviders: agentRegistry.providers,
@@ -168,7 +187,7 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
     await createMainWindow(runtime);
 
     // Tray icon
-    createAppTray(() => mainWindow, runtime.app);
+    createAppTray(() => mainWindow, runtime.app, shutdownApp);
 
     // Hide to tray instead of closing (non-macOS)
     if (mainWindow) {
@@ -181,8 +200,13 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
       }
     });
 
-    runtime.app.once("before-quit", async () => {
-      await mcpHttpServer?.stop();
+    runtime.app.on("before-quit", (event) => {
+      if (isShuttingDown) {
+        return;
+      }
+
+      event.preventDefault();
+      void shutdownApp();
     });
   });
 

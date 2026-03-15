@@ -1,11 +1,15 @@
 /*
-Назначение: Создаёт иконку приложения в системном трее с контекстным меню и скрытием окна вместо закрытия.
+Назначение: Создаёт иконку приложения в системном трее с контекстным меню, скрытием окна вместо закрытия и вызовом явного завершения приложения.
 Не входит: Отправка уведомлений, IPC-каналы и определение путей к файловым иконкам.
 */
 import { App, BrowserWindow, Menu, nativeImage, Tray } from "electron";
 import { getTrayIconPath } from "../assets/app-icon-paths";
 
-export function createAppTray(getWindow: () => BrowserWindow | null, app: App): Tray {
+export function createAppTray(
+  getWindow: () => BrowserWindow | null,
+  app: App,
+  quitApplication: () => void | Promise<void>
+): Tray {
   const trayIconPath = getTrayIconPath(app);
   const icon = trayIconPath ? nativeImage.createFromPath(trayIconPath) : nativeImage.createEmpty();
 
@@ -30,7 +34,7 @@ export function createAppTray(getWindow: () => BrowserWindow | null, app: App): 
     {
       label: "Выйти",
       click() {
-        app.quit();
+        void quitApplication();
       }
     }
   ]);

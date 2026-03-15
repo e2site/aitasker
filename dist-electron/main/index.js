@@ -2181,17 +2181,17 @@ function createMcpServer(appService, logger) {
   server.registerTool(
     "get_task",
     {
-      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443 \u0438 \u0435\u0435 \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043F\u043B\u0430\u043D \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443 \u0438 \u0435\u0435 \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043F\u043B\u0430\u043D \u043F\u043E taskId \u0431\u0435\u0437 \u0430\u043A\u0442\u0438\u0432\u0430\u0446\u0438\u0438 \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
       inputSchema: {
         taskId: z2.string()
       }
     },
     async ({ taskId }) => {
       logger.debug("mcp", "Tool get_task called", { taskId });
-      const { detail, project } = await getScopedTaskDetail(taskId);
+      const detail = await appService.getTaskDetail(taskId);
       return {
         content: textContent(JSON.stringify(detail, null, 2)),
-        structuredContent: { ...detail, project }
+        structuredContent: detail
       };
     }
   );
@@ -2803,7 +2803,7 @@ function getTrayIconPath(app) {
 
 // src/main/tray/app-tray.ts
 import { Menu, nativeImage, Tray } from "electron";
-function createAppTray(getWindow, app) {
+function createAppTray(getWindow, app, quitApplication) {
   const trayIconPath = getTrayIconPath(app);
   const icon = trayIconPath ? nativeImage.createFromPath(trayIconPath) : nativeImage.createEmpty();
   if (icon.isEmpty()) {
@@ -2825,7 +2825,7 @@ function createAppTray(getWindow, app) {
     {
       label: "\u0412\u044B\u0439\u0442\u0438",
       click() {
-        app.quit();
+        void quitApplication();
       }
     }
   ]);
@@ -2942,6 +2942,22 @@ function bootstrapMainProcess(runtime) {
     const agentRegistry = createAgentRegistry();
     let appService;
     let mcpHttpServer = null;
+    let isShuttingDown = false;
+    const shutdownApp = async () => {
+      if (isShuttingDown) {
+        return;
+      }
+      isShuttingDown = true;
+      try {
+        await mcpHttpServer?.stop();
+      } catch (error) {
+        logger.error("app", "Failed to stop MCP server during shutdown", {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      } finally {
+        runtime.app.exit(0);
+      }
+    };
     appService = createAppService({
       agentProviders: agentRegistry.providers,
       agentSessionRepository,
@@ -2974,7 +2990,7 @@ function bootstrapMainProcess(runtime) {
     });
     registerIpcHandlers(runtime.ipcMain, appService);
     await createMainWindow(runtime);
-    createAppTray(() => mainWindow, runtime.app);
+    createAppTray(() => mainWindow, runtime.app, shutdownApp);
     if (mainWindow) {
       setupWindowHideOnClose(mainWindow, process.platform, runtime.app);
     }
@@ -2983,8 +2999,12 @@ function bootstrapMainProcess(runtime) {
         await createMainWindow(runtime);
       }
     });
-    runtime.app.once("before-quit", async () => {
-      await mcpHttpServer?.stop();
+    runtime.app.on("before-quit", (event) => {
+      if (isShuttingDown) {
+        return;
+      }
+      event.preventDefault();
+      void shutdownApp();
     });
   });
   runtime.app.on("window-all-closed", () => {

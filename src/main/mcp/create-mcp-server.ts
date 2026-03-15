@@ -1,5 +1,5 @@
 /*
-Назначение: Создает MCP-сервер, который работает с проектами, задачами, планами, расширениями и доработками через активный и заполненный проектный профиль.
+Назначение: Создает MCP-сервер для работы с проектами, задачами, планами, расширениями и доработками; операции записи и проектные выборки идут через активный профиль, а get_task умеет читать задачу глобально по taskId.
 Не входит: HTTP-хостинг, жизненный цикл Electron-окна и прямое создание файлов внешними агентами.
 */
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -361,18 +361,18 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
   server.registerTool(
     "get_task",
     {
-      description: "Получить задачу и ее текущий план внутри активного подготовленного проекта.",
+      description: "Получить задачу и ее текущий план по taskId без активации проекта.",
       inputSchema: {
         taskId: z.string()
       }
     },
     async ({ taskId }) => {
       logger.debug("mcp", "Tool get_task called", { taskId });
-      const { detail, project } = await getScopedTaskDetail(taskId);
+      const detail = await appService.getTaskDetail(taskId);
 
       return {
         content: textContent(JSON.stringify(detail, null, 2)),
-        structuredContent: { ...detail, project }
+        structuredContent: detail
       };
     }
   );

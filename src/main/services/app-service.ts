@@ -9,19 +9,24 @@ import type {
   AppHealthSnapshot,
   ConsolidatePlanDiscussionInput,
   CreateProjectInput,
+  CreateResourceInput,
   CreateTaskInput,
   DeletePromptOverrideInput,
   DesktopDataChangeEvent,
   DeleteTaskResult,
+  LinkResourceInput,
   LinkTaskInput,
   ProjectRecord,
   PromptOverrideRecord,
+  ResourceRecord,
   RestorePlanRevisionInput,
   SavePlanInput,
   TaskDetail,
   TaskRecord,
   TaskStatus,
+  UnlinkResourceInput,
   UnlinkTaskInput,
+  UpdateResourceInput,
   UpdateTaskInput,
   UpdateTaskStatusInput,
   UpdateProjectProfileInput,
@@ -33,12 +38,16 @@ import {
   appendPlanImprovementInputSchema,
   consolidatePlanDiscussionInputSchema,
   createProjectInputSchema,
+  createResourceInputSchema,
   createTaskInputSchema,
   deletePromptOverrideInputSchema,
+  linkResourceInputSchema,
   linkTaskInputSchema,
   restorePlanRevisionInputSchema,
   savePlanInputSchema,
+  unlinkResourceInputSchema,
   unlinkTaskInputSchema,
+  updateResourceInputSchema,
   updateTaskInputSchema,
   updateTaskStatusInputSchema,
   updateProjectProfileInputSchema,
@@ -56,7 +65,9 @@ import type { AgentSessionRepository } from "../db/agent-session-repository";
 import type { PlanRepository } from "../db/plan-repository";
 import type { PromptOverrideRepository } from "../db/prompt-override-repository";
 import type { ProjectRepository } from "../db/project-repository";
+import type { ResourceRepository } from "../db/resource-repository";
 import type { TaskLinkRepository } from "../db/task-link-repository";
+import type { TaskResourceRepository } from "../db/task-resource-repository";
 import type { TaskRepository } from "../db/task-repository";
 
 export interface AppServiceDependencies {
@@ -71,9 +82,11 @@ export interface AppServiceDependencies {
   projectRepository: ProjectRepository;
   promptOverrideRepository: PromptOverrideRepository;
   relaunchApp(): void;
+  resourceRepository: ResourceRepository;
   sqlite: import("better-sqlite3").Database;
   taskLinkRepository: TaskLinkRepository;
   taskRepository: TaskRepository;
+  taskResourceRepository: TaskResourceRepository;
 }
 
 export interface AppService {
@@ -82,21 +95,28 @@ export interface AppService {
   appendPlanImprovement(input: AppendPlanImprovementInput): Promise<TaskDetail>;
   consolidatePlanDiscussion(input: ConsolidatePlanDiscussionInput): Promise<TaskDetail>;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
+  createResource(input: CreateResourceInput): Promise<ResourceRecord>;
   createTask(input: CreateTaskInput): Promise<TaskDetail>;
   deletePromptOverride(input: DeletePromptOverrideInput): Promise<void>;
+  deleteResource(id: string): Promise<void>;
   deleteTask(taskId: string): Promise<DeleteTaskResult>;
   exportData(): Promise<{ filePath: string } | null>;
   getHealthSnapshot(): AppHealthSnapshot;
   getProject(projectId: string): Promise<ProjectRecord | null>;
+  getResource(id: string): Promise<ResourceRecord>;
   getTaskDetail(taskId: string, projectId?: string): Promise<TaskDetail>;
   importData(): Promise<void>;
+  linkResource(input: LinkResourceInput): Promise<TaskDetail>;
   linkTask(input: LinkTaskInput): Promise<TaskDetail>;
   listPromptOverrides(): Promise<PromptOverrideRecord[]>;
   listProjects(): Promise<ProjectRecord[]>;
+  listResources(): Promise<ResourceRecord[]>;
   listTasks(projectId?: string): Promise<TaskRecord[]>;
   restorePlanRevision(input: RestorePlanRevisionInput): Promise<TaskDetail>;
   savePlan(input: SavePlanInput): Promise<TaskDetail>;
+  unlinkResource(input: UnlinkResourceInput): Promise<TaskDetail>;
   unlinkTask(input: UnlinkTaskInput): Promise<TaskDetail>;
+  updateResource(input: UpdateResourceInput): Promise<ResourceRecord>;
   updateTask(input: UpdateTaskInput): Promise<TaskDetail>;
   updateTaskStatus(input: UpdateTaskStatusInput): Promise<TaskDetail>;
   updateProjectProfile(input: UpdateProjectProfileInput): Promise<ProjectRecord>;
@@ -121,11 +141,12 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
       throw new Error(`Project ${task.projectId} was not found.`);
     }
 
-    const [plan, planRevisions, agentSession, linkedTasks] = await Promise.all([
+    const [plan, planRevisions, agentSession, linkedTasks, linkedResources] = await Promise.all([
       dependencies.planRepository.getByTaskId(taskId),
       dependencies.planRepository.listRevisions(taskId),
       dependencies.agentSessionRepository.getByTaskId(taskId),
-      dependencies.taskLinkRepository.listByTaskId(taskId)
+      dependencies.taskLinkRepository.listByTaskId(taskId),
+      dependencies.taskResourceRepository.listByTaskId(taskId)
     ]);
 
     return {
@@ -134,7 +155,8 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
       plan,
       planRevisions,
       agentSession,
-      linkedTasks
+      linkedTasks,
+      linkedResources
     };
   };
 
@@ -508,6 +530,56 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
         taskId: parsedInput.taskId
       });
 
+      return getTaskDetail(parsedInput.taskId);
+    },
+    async createResource(input) {
+      const parsedInput = createResourceInputSchema.parse(input);
+      const resource = await dependencies.resourceRepository.create(parsedInput);
+      emitDataChanged({ reason: "create-resource", projectId: null, taskId: null });
+      return resource;
+    },
+    async getResource(id) {
+      const resource = await dependencies.resourceRepository.getById(id);
+      if (!resource) {
+        throw new Error(`Resource ${id} was not found.`);
+      }
+      return resource;
+    },
+    listResources() {
+      return dependencies.resourceRepository.list();
+    },
+    async updateResource(input) {
+      const parsedInput = updateResourceInputSchema.parse(input);
+      const resource = await dependencies.resourceRepository.update(parsedInput.id, {
+        name: parsedInput.name,
+        contentMd: parsedInput.contentMd
+      });
+      emitDataChanged({ reason: "update-resource", projectId: null, taskId: null });
+      return resource;
+    },
+    async deleteResource(id) {
+      await dependencies.resourceRepository.delete(id);
+      emitDataChanged({ reason: "delete-resource", projectId: null, taskId: null });
+    },
+    async linkResource(input) {
+      const parsedInput = linkResourceInputSchema.parse(input);
+      await dependencies.taskResourceRepository.link({
+        taskId: parsedInput.taskId,
+        resourceId: parsedInput.resourceId,
+        comment: parsedInput.comment
+      });
+      const detail = await getTaskDetail(parsedInput.taskId);
+      emitDataChanged({ reason: "link-resource", projectId: detail.task.projectId, taskId: parsedInput.taskId });
+      return getTaskDetail(parsedInput.taskId);
+    },
+    async unlinkResource(input) {
+      const parsedInput = unlinkResourceInputSchema.parse(input);
+      const detail = await getTaskDetail(parsedInput.taskId);
+      const deleted = await dependencies.taskResourceRepository.unlink(parsedInput.linkId);
+      if (!deleted) {
+        throw new Error(`Связь ресурса ${parsedInput.linkId} не найдена.`);
+      }
+      emitDataChanged({ reason: "unlink-resource", projectId: detail.task.projectId, taskId: parsedInput.taskId });
       return getTaskDetail(parsedInput.taskId);
     },
     async upsertPromptOverride(input) {

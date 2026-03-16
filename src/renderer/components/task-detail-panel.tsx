@@ -3,8 +3,11 @@
 Не входит: Отрисовка списка задач и форма создания задач.
 */
 import { useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, ChevronDown, Link, Pencil, Eye, Trash2, FilePlus, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, ChevronUp, Link, Pencil, Eye, Trash2, FilePlus, X } from "lucide-react";
+import { LinkResourceDialog } from "@/renderer/components/link-resource-dialog";
 import { LinkTaskDialog } from "@/renderer/components/link-task-dialog";
+import { MarkdownPlanEditor } from "@/renderer/editors/markdown-plan-editor";
+import { MarkdownPlanViewer } from "@/renderer/components/markdown-plan-viewer";
 import { McpPlanningPanel } from "@/renderer/components/mcp-planning-panel";
 import { McpPromptShortcuts } from "@/renderer/components/mcp-prompt-shortcuts";
 import { TaskPlanWorkspace } from "@/renderer/components/task-plan-workspace";
@@ -30,6 +33,7 @@ const TASK_STATUSES: { label: string; value: TaskStatus }[] = [
   { value: "planning", label: "Планирование" },
   { value: "requires_clarification", label: "Требует уточнений" },
   { value: "implementation", label: "Реализация" },
+  { value: "testing", label: "Тестирование" },
   { value: "completed", label: "Выполнено" },
 ];
 
@@ -38,6 +42,7 @@ const STATUS_DOT_COLORS: Record<TaskStatus, string> = {
   planning: "bg-sky-500",
   requires_clarification: "bg-rose-500",
   implementation: "bg-amber-500",
+  testing: "bg-purple-500",
   completed: "bg-emerald-500",
 };
 
@@ -46,6 +51,7 @@ const STATUS_TEXT_COLORS: Record<TaskStatus, string> = {
   planning: "text-sky-600",
   requires_clarification: "text-rose-600",
   implementation: "text-amber-600",
+  testing: "text-purple-600",
   completed: "text-emerald-600",
 };
 
@@ -55,6 +61,7 @@ const STATUS_BADGE_CLASSES: Record<TaskStatus, string> = {
   planning: "bg-sky-100 text-sky-800 hover:bg-sky-200",
   requires_clarification: "bg-rose-100 text-rose-800 hover:bg-rose-200",
   implementation: "bg-amber-100 text-amber-800 hover:bg-amber-200",
+  testing: "bg-purple-100 text-purple-800 hover:bg-purple-200",
   completed: "bg-emerald-100 text-emerald-800 hover:bg-emerald-200",
 };
 
@@ -65,9 +72,11 @@ export interface TaskDetailPanelProps {
   isAppendingPlanExtension: boolean;
   isAppendingPlanImprovement: boolean;
   isDeletingTask: boolean;
+  isLinkingResource: boolean;
   isLinkingTask: boolean;
   isRestoringRevision: boolean;
   isSavingPlan: boolean;
+  isUnlinkingResource: boolean;
   isUnlinkingTask: boolean;
   isUpdatingStatus: boolean;
   isUpdatingTask: boolean;
@@ -75,10 +84,12 @@ export interface TaskDetailPanelProps {
   onAppendPlanExtension(taskId: string, content: string): void;
   onAppendPlanImprovement(taskId: string, content: string): void;
   onDeleteTask(taskId: string): void;
+  onLinkResource(resourceId: string, comment: string): void;
   onLinkTask(targetTaskId: string, comment: string): void;
   onRestorePlanRevision(taskId: string, revisionId: string): void;
   onSavePlan(taskId: string, contentMd: string): void;
   onSetEditorMode(mode: "view" | "edit"): void;
+  onUnlinkResource(linkId: string): void;
   onUnlinkTask(linkId: string): void;
   onUpdateStatus(taskId: string, status: TaskStatus): void;
   onUpdateTask(taskId: string, fields: { title?: string; description?: string }): void;
@@ -152,14 +163,18 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   const [titleDraft, setTitleDraft] = useState("");
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [linkResourceDialogOpen, setLinkResourceDialogOpen] = useState(false);
 
   useEffect(() => {
     setDraftPlan(props.detail?.plan ? parseManagedPlanContent(props.detail.plan.contentMd).baseContentMd : "");
     setActiveTab("plan");
     setEditingTitle(false);
     setEditingDescription(false);
+    setDescriptionExpanded(false);
     setLinkDialogOpen(false);
+    setLinkResourceDialogOpen(false);
   }, [props.detail?.plan?.contentMd, props.detail?.task.id]);
 
   if (!props.detail) {
@@ -278,49 +293,100 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
           </h1>
         )}
 
-        {/* Описание — редактируемое только при статусе «new» */}
-        {detail.task.status === "new" ? (
-          editingDescription ? (
-            <textarea
-              autoFocus
-              className="mb-5 w-full max-w-2xl rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm leading-6 text-slate-600 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              rows={4}
+        {/* Описание */}
+        {editingDescription ? (
+          <div className="mb-5">
+            <MarkdownPlanEditor
               value={descriptionDraft}
-              disabled={props.isUpdatingTask}
-              onChange={(e) => setDescriptionDraft(e.target.value)}
-              onBlur={() => {
-                const trimmed = descriptionDraft.trim();
-                if (trimmed.length >= 12 && trimmed !== detail.task.description) {
-                  props.onUpdateTask(detail.task.id, { description: trimmed });
-                }
-                setEditingDescription(false);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") { setEditingDescription(false); }
-                if (e.key === "Enter" && e.ctrlKey) { e.currentTarget.blur(); }
-              }}
+              onChange={setDescriptionDraft}
+              resetKey={detail.task.id}
             />
-          ) : (
-            <p
-              className="group mb-5 max-w-2xl cursor-text rounded-lg px-2 py-1 text-sm leading-6 text-slate-600 hover:bg-slate-50"
-              onClick={() => {
-                setDescriptionDraft(detail.task.description);
-                setEditingDescription(true);
-              }}
-              title="Нажмите, чтобы редактировать"
-            >
-              {detail.task.description || (
-                <em className="not-italic text-slate-400">Нажмите, чтобы добавить описание...</em>
-              )}
-              <Pencil className="ml-2 inline size-3 text-slate-300 opacity-0 transition group-hover:opacity-100" />
-            </p>
-          )
+            <div className="mt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingDescription(false)}
+                className="rounded-lg px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-100"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={props.isUpdatingTask}
+                onClick={() => {
+                  const trimmed = descriptionDraft.trim();
+                  if (trimmed.length >= 12 && trimmed !== detail.task.description) {
+                    props.onUpdateTask(detail.task.id, { description: trimmed });
+                  }
+                  setEditingDescription(false);
+                }}
+                className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-50"
+              >
+                {props.isUpdatingTask ? "Сохранение..." : "Сохранить"}
+              </button>
+            </div>
+          </div>
         ) : (
-          detail.task.description ? (
-            <p className="mb-5 max-w-2xl text-sm leading-6 text-slate-600">{detail.task.description}</p>
-          ) : (
-            <div className="mb-5" />
-          )
+          <div className="mb-5">
+            {detail.task.description ? (
+              <>
+                <div
+                  className="relative"
+                  onClick={detail.task.status === "new" ? () => {
+                    setDescriptionDraft(detail.task.description);
+                    setEditingDescription(true);
+                  } : undefined}
+                  style={detail.task.status === "new" ? { cursor: "text" } : undefined}
+                  title={detail.task.status === "new" ? "Нажмите, чтобы редактировать" : undefined}
+                >
+                  <div style={descriptionExpanded ? undefined : { maxHeight: "8rem", overflow: "hidden" }}>
+                    <MarkdownPlanViewer contentMd={detail.task.description} />
+                  </div>
+                  {!descriptionExpanded && detail.task.description.split("\n").length > 5 && (
+                    <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white to-transparent" />
+                  )}
+                </div>
+                <div className="mt-1 flex items-center gap-3">
+                  {detail.task.description.split("\n").length > 5 && (
+                    <button
+                      type="button"
+                      onClick={() => setDescriptionExpanded(!descriptionExpanded)}
+                      className="flex items-center gap-1 text-xs text-slate-400 transition hover:text-slate-600"
+                    >
+                      {descriptionExpanded ? (
+                        <><ChevronUp className="size-3" /> Свернуть</>
+                      ) : (
+                        <><ChevronDown className="size-3" /> Развернуть</>
+                      )}
+                    </button>
+                  )}
+                  {detail.task.status === "new" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDescriptionDraft(detail.task.description);
+                        setEditingDescription(true);
+                      }}
+                      className="flex items-center gap-1 text-xs text-slate-400 transition hover:text-slate-600"
+                    >
+                      <Pencil className="size-3" /> Редактировать
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : detail.task.status === "new" ? (
+              <p
+                className="cursor-text rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-50"
+                onClick={() => {
+                  setDescriptionDraft("");
+                  setEditingDescription(true);
+                }}
+              >
+                Нажмите, чтобы добавить описание...
+              </p>
+            ) : (
+              <div />
+            )}
+          </div>
         )}
 
         {/* Tabs */}
@@ -472,6 +538,52 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             Привязать задачу
           </button>
         </div>
+
+        {/* Привязанные ресурсы */}
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Ресурсы
+          </span>
+
+          {detail.linkedResources.length === 0 ? (
+            <p className="text-xs text-slate-400">Нет привязанных ресурсов</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {detail.linkedResources.map((linked) => (
+                <div
+                  key={linked.id}
+                  className="group flex items-start gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                >
+                  <BookOpen className="mt-0.5 size-3 shrink-0 text-slate-400" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-slate-700 line-clamp-2">{linked.name}</p>
+                    {linked.comment && (
+                      <p className="mt-0.5 text-xs text-slate-400 line-clamp-2">{linked.comment}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    title="Отвязать ресурс"
+                    disabled={props.isUnlinkingResource}
+                    onClick={() => props.onUnlinkResource(linked.id)}
+                    className="shrink-0 rounded p-0.5 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100 disabled:pointer-events-none"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setLinkResourceDialogOpen(true)}
+            className="flex items-center gap-1.5 self-start rounded-lg px-2 py-1 text-xs text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            <BookOpen className="size-3" />
+            Привязать ресурс
+          </button>
+        </div>
       </aside>
 
       <LinkTaskDialog
@@ -483,6 +595,17 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
         onLink={(targetTaskId, comment) => {
           props.onLinkTask(targetTaskId, comment);
           setLinkDialogOpen(false);
+        }}
+      />
+
+      <LinkResourceDialog
+        existingLinkedResourceIds={detail.linkedResources.map((r) => r.resourceId)}
+        isLinking={props.isLinkingResource}
+        isOpen={linkResourceDialogOpen}
+        onClose={() => setLinkResourceDialogOpen(false)}
+        onLink={(resourceId, comment) => {
+          props.onLinkResource(resourceId, comment);
+          setLinkResourceDialogOpen(false);
         }}
       />
     </section>

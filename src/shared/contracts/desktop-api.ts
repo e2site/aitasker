@@ -12,6 +12,7 @@ export const taskStatusSchema = z.enum([
   "planning",
   "requires_clarification",
   "implementation",
+  "testing",
   "completed"
 ]);
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
@@ -83,6 +84,25 @@ export const agentSessionRecordSchema = z.object({
 });
 export type AgentSessionRecord = z.infer<typeof agentSessionRecordSchema>;
 
+export const resourceRecordSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  contentMd: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+export type ResourceRecord = z.infer<typeof resourceRecordSchema>;
+
+export const linkedResourceRecordSchema = z.object({
+  id: z.string(),
+  resourceId: z.string(),
+  name: z.string(),
+  contentMd: z.string(),
+  comment: z.string(),
+  createdAt: z.string()
+});
+export type LinkedResourceRecord = z.infer<typeof linkedResourceRecordSchema>;
+
 export const linkedTaskRecordSchema = z.object({
   id: z.string(),
   taskId: z.string(),
@@ -101,7 +121,8 @@ export const taskDetailSchema = z.object({
   plan: planRecordSchema.nullable(),
   planRevisions: z.array(planRevisionRecordSchema),
   agentSession: agentSessionRecordSchema.nullable(),
-  linkedTasks: z.array(linkedTaskRecordSchema)
+  linkedTasks: z.array(linkedTaskRecordSchema),
+  linkedResources: z.array(linkedResourceRecordSchema)
 });
 export type TaskDetail = z.infer<typeof taskDetailSchema>;
 
@@ -212,6 +233,36 @@ export const answerPlanQuestionInputSchema = z.object({
 });
 export type AnswerPlanQuestionInput = z.infer<typeof answerPlanQuestionInputSchema>;
 
+export const createResourceInputSchema = z.object({
+  name: z.string().trim().min(1, "Введите название ресурса.").max(200),
+  contentMd: z.string().optional()
+});
+export type CreateResourceInput = z.infer<typeof createResourceInputSchema>;
+
+export const updateResourceInputSchema = z
+  .object({
+    id: z.string(),
+    name: z.string().trim().min(1, "Введите название ресурса.").max(200).optional(),
+    contentMd: z.string().optional()
+  })
+  .refine((v) => v.name !== undefined || v.contentMd !== undefined, {
+    message: "Передайте хотя бы одно поле для обновления ресурса."
+  });
+export type UpdateResourceInput = z.infer<typeof updateResourceInputSchema>;
+
+export const linkResourceInputSchema = z.object({
+  taskId: z.string(),
+  resourceId: z.string(),
+  comment: z.string().max(500).default("")
+});
+export type LinkResourceInput = z.infer<typeof linkResourceInputSchema>;
+
+export const unlinkResourceInputSchema = z.object({
+  linkId: z.string(),
+  taskId: z.string()
+});
+export type UnlinkResourceInput = z.infer<typeof unlinkResourceInputSchema>;
+
 export const deleteTaskResultSchema = z.object({
   deletedTaskId: z.string()
 });
@@ -226,7 +277,7 @@ export type UpdateTaskStatusInput = z.infer<typeof updateTaskStatusInputSchema>;
 export const updateTaskInputSchema = z.object({
   taskId: z.string(),
   title: z.string().trim().min(3, "Введите минимум 3 символа.").max(120).optional(),
-  description: z.string().trim().min(12, "Опишите задачу хотя бы в 12 символах.").max(4000).optional()
+  description: z.string().trim().min(12, "Опишите задачу хотя бы в 12 символах.").optional()
 }).refine(
   (v) => v.title !== undefined || v.description !== undefined,
   { message: "Передайте хотя бы одно поле для обновления задачи." }
@@ -282,13 +333,18 @@ export const desktopDataChangeEventSchema = z.object({
     "answer-plan-question",
     "consolidate-plan-discussion",
     "create-project",
+    "create-resource",
     "create-task",
+    "delete-resource",
     "delete-task",
+    "link-resource",
     "link-task",
     "restore-plan-revision",
     "save-plan",
+    "unlink-resource",
     "unlink-task",
     "update-project-profile",
+    "update-resource",
     "update-task",
     "update-task-status"
   ]),
@@ -302,24 +358,31 @@ export interface DesktopApi {
   answerPlanQuestion(input: AnswerPlanQuestionInput): Promise<TaskDetail>;
   consolidatePlanDiscussion(input: ConsolidatePlanDiscussionInput): Promise<TaskDetail>;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
+  createResource(input: CreateResourceInput): Promise<ResourceRecord>;
   createTask(input: CreateTaskInput): Promise<TaskDetail>;
   deletePromptOverride(input: DeletePromptOverrideInput): Promise<void>;
+  deleteResource(id: string): Promise<void>;
   deleteTask(taskId: string): Promise<DeleteTaskResult>;
   exportData(): Promise<{ filePath: string } | null>;
   getHealth(): Promise<AppHealthSnapshot>;
   getProject(projectId: string): Promise<ProjectRecord | null>;
+  getResource(id: string): Promise<ResourceRecord>;
   getTaskDetail(taskId: string): Promise<TaskDetail>;
   importData(): Promise<void>;
+  linkResource(input: LinkResourceInput): Promise<TaskDetail>;
   linkTask(input: LinkTaskInput): Promise<TaskDetail>;
   listPromptOverrides(): Promise<PromptOverrideRecord[]>;
   listProjects(): Promise<ProjectRecord[]>;
+  listResources(): Promise<ResourceRecord[]>;
   listTasks(): Promise<TaskRecord[]>;
   onDataChanged(listener: (event: DesktopDataChangeEvent) => void): () => void;
   onFocusTask(listener: (taskId: string) => void): () => void;
   restorePlanRevision(input: RestorePlanRevisionInput): Promise<TaskDetail>;
   savePlan(input: SavePlanInput): Promise<TaskDetail>;
+  unlinkResource(input: UnlinkResourceInput): Promise<TaskDetail>;
   unlinkTask(input: UnlinkTaskInput): Promise<TaskDetail>;
   updateProjectProfile(input: UpdateProjectProfileInput): Promise<ProjectRecord>;
+  updateResource(input: UpdateResourceInput): Promise<ResourceRecord>;
   updateTask(input: UpdateTaskInput): Promise<TaskDetail>;
   updateTaskStatus(input: UpdateTaskStatusInput): Promise<TaskDetail>;
   upsertPromptOverride(input: UpsertPromptOverrideInput): Promise<PromptOverrideRecord>;

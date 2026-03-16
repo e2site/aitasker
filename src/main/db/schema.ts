@@ -87,12 +87,34 @@ export const promptOverridesTable = sqliteTable("prompt_overrides", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
 });
 
+export const resourcesTable = sqliteTable("resources", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  contentMd: text("content_md").notNull().default(""),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+
+export const taskResourcesTable = sqliteTable("task_resources", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id")
+    .notNull()
+    .references(() => tasksTable.id, { onDelete: "cascade" }),
+  resourceId: text("resource_id")
+    .notNull()
+    .references(() => resourcesTable.id, { onDelete: "cascade" }),
+  comment: text("comment").notNull().default(""),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull()
+});
+
 export const databaseSchema = {
   agentSessionsTable,
   planRevisionsTable,
   plansTable,
   projectsTable,
   promptOverridesTable,
+  resourcesTable,
   taskLinksTable,
+  taskResourcesTable,
   tasksTable
 };

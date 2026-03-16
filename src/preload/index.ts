@@ -8,14 +8,18 @@ import type {
   AppendPlanImprovementInput,
   ConsolidatePlanDiscussionInput,
   CreateProjectInput,
+  CreateResourceInput,
   CreateTaskInput,
   DeletePromptOverrideInput,
   DesktopDataChangeEvent,
   DesktopApi,
+  LinkResourceInput,
   LinkTaskInput,
   RestorePlanRevisionInput,
   SavePlanInput,
+  UnlinkResourceInput,
   UnlinkTaskInput,
+  UpdateResourceInput,
   UpdateTaskInput,
   UpdateTaskStatusInput,
   UpdateProjectProfileInput,
@@ -34,22 +38,29 @@ const channels = {
   appendPlanImprovement: "app:append-plan-improvement",
   consolidatePlanDiscussion: "app:consolidate-plan-discussion",
   createProject: "app:create-project",
+  createResource: "app:create-resource",
   createTask: "app:create-task",
   deletePromptOverride: "app:delete-prompt-override",
+  deleteResource: "app:delete-resource",
   deleteTask: "app:delete-task",
   exportData: "app:export-data",
   getHealth: "app:get-health",
   getProject: "app:get-project",
+  getResource: "app:get-resource",
   getTaskDetail: "app:get-task-detail",
   importData: "app:import-data",
+  linkResource: "app:link-resource",
   linkTask: "app:link-task",
   listPromptOverrides: "app:list-prompt-overrides",
   listProjects: "app:list-projects",
+  listResources: "app:list-resources",
   listTasks: "app:list-tasks",
   onDataChanged: "app:data-changed",
   restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
+  unlinkResource: "app:unlink-resource",
   unlinkTask: "app:unlink-task",
+  updateResource: "app:update-resource",
   updateTask: "app:update-task",
   updateTaskStatus: "app:update-task-status",
   updateProjectProfile: "app:update-project-profile",
@@ -76,8 +87,14 @@ export function registerDesktopApi(runtime: PreloadRuntime): void {
     createTask(input: CreateTaskInput) {
       return runtime.ipcRenderer.invoke(channels.createTask, input);
     },
+    createResource(input: CreateResourceInput) {
+      return runtime.ipcRenderer.invoke(channels.createResource, input);
+    },
     deleteTask(taskId: string) {
       return runtime.ipcRenderer.invoke(channels.deleteTask, taskId);
+    },
+    deleteResource(id: string) {
+      return runtime.ipcRenderer.invoke(channels.deleteResource, id);
     },
     exportData() {
       return runtime.ipcRenderer.invoke(channels.exportData);
@@ -87,6 +104,9 @@ export function registerDesktopApi(runtime: PreloadRuntime): void {
     },
     getProject(projectId: string) {
       return runtime.ipcRenderer.invoke(channels.getProject, projectId);
+    },
+    getResource(id: string) {
+      return runtime.ipcRenderer.invoke(channels.getResource, id);
     },
     getTaskDetail(taskId: string) {
       return runtime.ipcRenderer.invoke(channels.getTaskDetail, taskId);
@@ -137,11 +157,23 @@ export function registerDesktopApi(runtime: PreloadRuntime): void {
     updateTask(input: UpdateTaskInput) {
       return runtime.ipcRenderer.invoke(channels.updateTask, input);
     },
+    linkResource(input: LinkResourceInput) {
+      return runtime.ipcRenderer.invoke(channels.linkResource, input);
+    },
     linkTask(input: LinkTaskInput) {
       return runtime.ipcRenderer.invoke(channels.linkTask, input);
     },
+    listResources() {
+      return runtime.ipcRenderer.invoke(channels.listResources);
+    },
+    unlinkResource(input: UnlinkResourceInput) {
+      return runtime.ipcRenderer.invoke(channels.unlinkResource, input);
+    },
     unlinkTask(input: UnlinkTaskInput) {
       return runtime.ipcRenderer.invoke(channels.unlinkTask, input);
+    },
+    updateResource(input: UpdateResourceInput) {
+      return runtime.ipcRenderer.invoke(channels.updateResource, input);
     },
     listPromptOverrides() {
       return runtime.ipcRenderer.invoke(channels.listPromptOverrides);

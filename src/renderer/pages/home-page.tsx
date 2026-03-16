@@ -31,6 +31,10 @@ import {
   useUpdateTaskMutation,
   useUpdateTaskStatusMutation
 } from "@/renderer/features/tasks/use-task-queries";
+import {
+  useLinkResourceMutation,
+  useUnlinkResourceMutation
+} from "@/renderer/features/resources/use-resource-mutations";
 import type { TaskStatus } from "@/shared/contracts/desktop-api";
 import { cn } from "@/renderer/components/ui/class-names";
 
@@ -39,6 +43,7 @@ const STATUS_DOT_COLORS: Record<TaskStatus, string> = {
   planning: "#38bdf8",
   requires_clarification: "#f87171",
   implementation: "#fbbf24",
+  testing: "#a855f7",
   completed: "#34d399",
 };
 
@@ -58,6 +63,8 @@ export function HomePage() {
   const updateTaskMutation = useUpdateTaskMutation();
   const linkTaskMutation = useLinkTaskMutation();
   const unlinkTaskMutation = useUnlinkTaskMutation();
+  const linkResourceMutation = useLinkResourceMutation();
+  const unlinkResourceMutation = useUnlinkResourceMutation();
   const exportDataMutation = useExportDataMutation();
   const importDataMutation = useImportDataMutation();
 
@@ -281,9 +288,11 @@ export function HomePage() {
                   isAppendingPlanImprovement={appendPlanImprovementMutation.isPending}
                   isAnsweringPlanQuestion={answerPlanQuestionMutation.isPending}
                   isDeletingTask={deleteTaskMutation.isPending}
+                  isLinkingResource={linkResourceMutation.isPending}
                   isRestoringRevision={restorePlanRevisionMutation.isPending}
                   isSavingPlan={savePlanMutation.isPending}
                   isLinkingTask={linkTaskMutation.isPending}
+                  isUnlinkingResource={unlinkResourceMutation.isPending}
                   isUnlinkingTask={unlinkTaskMutation.isPending}
                   isUpdatingTask={updateTaskMutation.isPending}
                   isUpdatingStatus={updateTaskStatusMutation.isPending}
@@ -326,9 +335,17 @@ export function HomePage() {
                     );
                   }}
                   onSetEditorMode={setEditorMode}
+                  onLinkResource={(resourceId, comment) => {
+                    if (!selectedTaskId) return;
+                    linkResourceMutation.mutate({ taskId: selectedTaskId, resourceId, comment });
+                  }}
                   onLinkTask={(targetTaskId, comment) => {
                     if (!selectedTaskId) return;
                     linkTaskMutation.mutate({ sourceTaskId: selectedTaskId, targetTaskId, comment });
+                  }}
+                  onUnlinkResource={(linkId) => {
+                    if (!selectedTaskId) return;
+                    unlinkResourceMutation.mutate({ linkId, taskId: selectedTaskId });
                   }}
                   onUnlinkTask={(linkId) => {
                     if (!selectedTaskId) return;

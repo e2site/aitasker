@@ -11,21 +11,28 @@ const channels = {
   appendPlanImprovement: "app:append-plan-improvement",
   consolidatePlanDiscussion: "app:consolidate-plan-discussion",
   createProject: "app:create-project",
+  createResource: "app:create-resource",
   createTask: "app:create-task",
   deletePromptOverride: "app:delete-prompt-override",
+  deleteResource: "app:delete-resource",
   deleteTask: "app:delete-task",
   exportData: "app:export-data",
   getHealth: "app:get-health",
   getProject: "app:get-project",
+  getResource: "app:get-resource",
   getTaskDetail: "app:get-task-detail",
   importData: "app:import-data",
+  linkResource: "app:link-resource",
   linkTask: "app:link-task",
   listPromptOverrides: "app:list-prompt-overrides",
   listProjects: "app:list-projects",
+  listResources: "app:list-resources",
   listTasks: "app:list-tasks",
   restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
+  unlinkResource: "app:unlink-resource",
   unlinkTask: "app:unlink-task",
+  updateResource: "app:update-resource",
   updateTask: "app:update-task",
   updateTaskStatus: "app:update-task-status",
   updateProjectProfile: "app:update-project-profile",
@@ -103,5 +110,26 @@ export function registerIpcHandlers(ipcMain: IpcMain, appService: AppService): v
   );
   ipcMain.handle(channels.deletePromptOverride, (_event, input) =>
     withIpcErrors(() => appService.deletePromptOverride(input))
+  );
+  ipcMain.handle(channels.createResource, (_event, input) =>
+    withIpcErrors(() => appService.createResource(input))
+  );
+  ipcMain.handle(channels.getResource, (_event, id: string) =>
+    withIpcErrors(() => appService.getResource(id))
+  );
+  ipcMain.handle(channels.listResources, () =>
+    withIpcErrors(() => appService.listResources())
+  );
+  ipcMain.handle(channels.updateResource, (_event, input) =>
+    withIpcErrors(() => appService.updateResource(input))
+  );
+  ipcMain.handle(channels.deleteResource, (_event, id: string) =>
+    withIpcErrors(() => appService.deleteResource(id))
+  );
+  ipcMain.handle(channels.linkResource, (_event, input) =>
+    withIpcErrors(() => appService.linkResource(input))
+  );
+  ipcMain.handle(channels.unlinkResource, (_event, input) =>
+    withIpcErrors(() => appService.unlinkResource(input))
   );
 }

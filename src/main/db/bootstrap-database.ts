@@ -91,6 +91,22 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS resources (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      content_md TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS task_resources (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      resource_id TEXT NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
+      comment TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    );
   `);
 
   if (!hasColumn(sqlite, "tasks", "project_id")) {
@@ -192,5 +208,7 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_plan_revisions_plan_id ON plan_revisions(plan_id);
     CREATE INDEX IF NOT EXISTS idx_task_links_source_task_id ON task_links(source_task_id);
     CREATE INDEX IF NOT EXISTS idx_task_links_target_task_id ON task_links(target_task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_resources_task_id ON task_resources(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_resources_resource_id ON task_resources(resource_id);
   `);
 }

@@ -10,8 +10,10 @@ import { createAppDatabase } from "./db/database";
 import { PlanRepository } from "./db/plan-repository";
 import { ProjectRepository } from "./db/project-repository";
 import { PromptOverrideRepository } from "./db/prompt-override-repository";
+import { ResourceRepository } from "./db/resource-repository";
 import { TaskLinkRepository } from "./db/task-link-repository";
 import { TaskRepository } from "./db/task-repository";
+import { TaskResourceRepository } from "./db/task-resource-repository";
 import { createAppService } from "./services/app-service";
 import type { AppService } from "./services/app-service";
 import { createDevLogger } from "./services/dev-logger";
@@ -128,6 +130,8 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
     const projectRepository = new ProjectRepository(databaseContext.database);
     const promptOverrideRepository = new PromptOverrideRepository(databaseContext.database);
     const agentSessionRepository = new AgentSessionRepository(databaseContext.database);
+    const resourceRepository = new ResourceRepository(databaseContext.database);
+    const taskResourceRepository = new TaskResourceRepository(databaseContext.database);
     const agentRegistry = createAgentRegistry();
     let appService!: AppService;
     let mcpHttpServer: McpHttpServer | null = null;
@@ -171,9 +175,11 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
         runtime.app.relaunch();
         runtime.app.exit(0);
       },
+      resourceRepository,
       sqlite: databaseContext.sqlite,
       taskLinkRepository,
-      taskRepository
+      taskRepository,
+      taskResourceRepository
     });
     mcpHttpServer = new McpHttpServer(appService, logger);
 

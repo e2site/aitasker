@@ -381,10 +381,10 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
     "update_task_status",
     {
       description:
-        "Обновить статус задачи внутри активного подготовленного проекта. Допустимые статусы: new, planning, requires_clarification, implementation, completed.",
+        "Обновить статус задачи внутри активного подготовленного проекта. Допустимые статусы: new, planning, requires_clarification, implementation, testing, completed.",
       inputSchema: {
         taskId: z.string(),
-        status: z.enum(["new", "planning", "requires_clarification", "implementation", "completed"])
+        status: z.enum(["new", "planning", "requires_clarification", "implementation", "testing", "completed"])
       }
     },
     async ({ status, taskId }) => {
@@ -591,6 +591,111 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
     }
   );
 
+  server.registerTool(
+    "create_resource",
+    {
+      description: "Создать новый глобальный ресурс (Markdown-документ) не привязанный к проекту.",
+      inputSchema: {
+        name: z.string().min(1).max(200),
+        contentMd: z.string().optional()
+      }
+    },
+    async ({ name, contentMd }) => {
+      logger.info("mcp", "Tool create_resource called", { name });
+      const resource = await appService.createResource({ name, contentMd });
+
+      return {
+        content: textContent(`Ресурс "${resource.name}" создан с id ${resource.id}.`),
+        structuredContent: resource
+      };
+    }
+  );
+
+  server.registerTool(
+    "get_resource",
+    {
+      description: "Получить ресурс по id.",
+      inputSchema: {
+        id: z.string()
+      }
+    },
+    async ({ id }) => {
+      logger.debug("mcp", "Tool get_resource called", { id });
+      const resource = await appService.getResource(id);
+
+      return {
+        content: textContent(JSON.stringify(resource, null, 2)),
+        structuredContent: resource
+      };
+    }
+  );
+
+  server.registerTool(
+    "list_resources",
+    {
+      description: "Показать список всех глобальных ресурсов."
+    },
+    async () => {
+      logger.debug("mcp", "Tool list_resources called");
+      const resources = await appService.listResources();
+
+      return {
+        content: textContent(JSON.stringify(resources, null, 2)),
+        structuredContent: { resources }
+      };
+    }
+  );
+
+  server.registerTool(
+    "update_resource",
+    {
+      description: "Обновить название или содержимое ресурса.",
+      inputSchema: {
+        id: z.string(),
+        name: z.string().min(1).max(200).optional(),
+        contentMd: z.string().optional()
+      }
+    },
+    async ({ id, name, contentMd }) => {
+      logger.info("mcp", "Tool update_resource called", { id });
+      const resource = await appService.updateResource({ id, name, contentMd });
+
+      return {
+        content: textContent(`Ресурс "${resource.name}" обновлен.`),
+        structuredContent: resource
+      };
+    }
+  );
+
+  server.registerTool(
+    "find_resources",
+    {
+      description: "Найти глобальные ресурсы по названию или содержимому.",
+      inputSchema: {
+        query: z.string().min(1),
+        limit: z.number().int().min(1).max(20).optional()
+      }
+    },
+    async ({ query, limit }) => {
+      logger.debug("mcp", "Tool find_resources called", { query });
+      const resources = await appService.listResources();
+      const normalizedQuery = query.trim().toLocaleLowerCase("ru-RU");
+      const matches = resources
+        .filter((r) =>
+          [r.id, r.name, r.contentMd]
+            .join(" ")
+            .toLocaleLowerCase("ru-RU")
+            .includes(normalizedQuery)
+        )
+        .slice(0, limit ?? 5);
+
+      return {
+        content: textContent(JSON.stringify(matches, null, 2)),
+        structuredContent: { resources: matches }
+      };
+    }
+  );
+
   server.registerPrompt(
     "plan_task",
     {
@@ -670,7 +775,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
 8. Сохрани итоговый Markdown через save_plan с source="agent". Если есть открытые вопросы, передай их отдельным полем openQuestions.
 
-9. После сохранения переведи задачу в статус implementation через update_task_status.
+9. После сохранения переведи задачу в статус testing через update_task_status.
 
 10. После сохранения ответь кратко:
 - какой проект был активирован

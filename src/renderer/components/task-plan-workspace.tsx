@@ -361,7 +361,7 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
                 ) : null}
 
                 {/* Тред сообщений */}
-                <div className="space-y-2">
+                <div className="space-y-5">
                   {threadItems.length === 0 && parsedPlan.questions.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
                       Обсуждений пока нет.
@@ -566,35 +566,41 @@ interface QAPairCardProps {
 
 function QAPairCard({ question, answer }: QAPairCardProps) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
-      <article className="plan-thread-message plan-thread-message--agent border-b border-slate-200">
-        <div className="plan-thread-message__meta">
-          <div className="flex items-center gap-2">
-            <span className="plan-thread-message__author">AI агент</span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES.discussion}`}>
-              вопрос
-            </span>
+    <div className="flex flex-col gap-3">
+      {/* Вопрос AI — слева */}
+      <div className="flex justify-start">
+        <article className="plan-thread-message plan-thread-message--agent w-full max-w-[85%]">
+          <div className="plan-thread-message__meta">
+            <div className="flex items-center gap-2">
+              <span className="plan-thread-message__author">AI агент</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES.discussion}`}>
+                вопрос
+              </span>
+            </div>
+            <span className="text-xs text-slate-400">{formatCommentDate(question.createdAt)}</span>
           </div>
-          <span className="text-xs text-slate-400">{formatCommentDate(question.createdAt)}</span>
-        </div>
-        <div className="plan-thread-message__body">
-          <MarkdownPlanViewer contentMd={question.content} />
-        </div>
-      </article>
-      <article className="plan-thread-message plan-thread-message--human">
-        <div className="plan-thread-message__meta">
-          <div className="flex items-center gap-2">
-            <span className="plan-thread-message__author">Вы</span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES.discussion}`}>
-              ответ
-            </span>
+          <div className="plan-thread-message__body">
+            <MarkdownPlanViewer contentMd={question.content} />
           </div>
-          <span className="text-xs text-slate-400">{formatCommentDate(answer.createdAt)}</span>
-        </div>
-        <div className="plan-thread-message__body">
-          <MarkdownPlanViewer contentMd={answer.content} />
-        </div>
-      </article>
+        </article>
+      </div>
+      {/* Ответ пользователя — справа */}
+      <div className="flex justify-end">
+        <article className="plan-thread-message plan-thread-message--human w-full max-w-[85%]">
+          <div className="plan-thread-message__meta">
+            <div className="flex items-center gap-2">
+              <span className="plan-thread-message__author">Вы</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES.discussion}`}>
+                ответ
+              </span>
+            </div>
+            <span className="text-xs text-slate-400">{formatCommentDate(answer.createdAt)}</span>
+          </div>
+          <div className="plan-thread-message__body">
+            <MarkdownPlanViewer contentMd={answer.content} />
+          </div>
+        </article>
+      </div>
     </div>
   );
 }

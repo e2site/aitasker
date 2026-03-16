@@ -31,6 +31,7 @@ function normalizeTaskStatus(status: string): TaskStatus {
     case "planning":
     case "requires_clarification":
     case "implementation":
+    case "testing":
     case "completed":
       return status;
     default:

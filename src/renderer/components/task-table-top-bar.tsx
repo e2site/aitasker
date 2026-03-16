@@ -35,6 +35,7 @@ const STATUS_FILTERS: { status: TaskStatus; label: string }[] = [
   { status: "planning", label: "Планирование" },
   { status: "requires_clarification", label: "Уточнение" },
   { status: "implementation", label: "Реализация" },
+  { status: "testing", label: "Тестирование" },
   { status: "completed", label: "Выполнено" }
 ];
 
@@ -43,6 +44,7 @@ const STATUS_PILL_CLASSES: Record<TaskStatus, string> = {
   planning: "bg-sky-100 text-sky-800 ring-sky-300",
   requires_clarification: "bg-rose-100 text-rose-800 ring-rose-300",
   implementation: "bg-amber-100 text-amber-800 ring-amber-300",
+  testing: "bg-purple-100 text-purple-800 ring-purple-300",
   completed: "bg-emerald-100 text-emerald-800 ring-emerald-300"
 };
 

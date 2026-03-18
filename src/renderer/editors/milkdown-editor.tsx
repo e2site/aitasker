@@ -2,6 +2,7 @@
 Назначение: WYSIWYG Markdown редактор на базе Milkdown с toolbar форматирования.
 Не входит: Загрузка изображений, slash-команды, совместное редактирование.
 */
+import { useRef } from "react";
 import type { Ctx } from "@milkdown/kit/ctx";
 import { Editor, rootCtx, defaultValueCtx, commandsCtx } from "@milkdown/kit/core";
 import { commonmark } from "@milkdown/kit/preset/commonmark";
@@ -16,6 +17,7 @@ import {
 } from "@milkdown/preset-commonmark";
 import { insertTableCommand } from "@milkdown/preset-gfm";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
+import { insert } from "@milkdown/kit/utils";
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from "@milkdown/react";
 import { cn } from "@/renderer/components/ui/class-names";
 
@@ -71,6 +73,7 @@ const TOOLBAR_BUTTONS: ToolbarButton[] = [
 
 function EditorToolbar() {
   const [loading, getEditor] = useInstance();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleMouseDown(e: React.MouseEvent, button: ToolbarButton) {
     e.preventDefault(); // не снимать фокус с editor
@@ -80,21 +83,54 @@ function EditorToolbar() {
     editor.action(button.action);
   }
 
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = reader.result as string;
+      if (loading) return;
+      const editor = getEditor();
+      if (!editor) return;
+      editor.action(insert(content));
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
   return (
-    <div className="milkdown-toolbar">
-      {TOOLBAR_BUTTONS.map((btn) => (
+    <>
+      <div className="milkdown-toolbar">
+        {TOOLBAR_BUTTONS.map((btn) => (
+          <button
+            key={btn.label}
+            type="button"
+            title={btn.title}
+            disabled={loading}
+            onMouseDown={(e) => handleMouseDown(e, btn)}
+            className="milkdown-toolbar__btn"
+          >
+            {btn.label}
+          </button>
+        ))}
         <button
-          key={btn.label}
           type="button"
-          title={btn.title}
+          title="Загрузить из .md файла"
           disabled={loading}
-          onMouseDown={(e) => handleMouseDown(e, btn)}
+          onMouseDown={(e) => { e.preventDefault(); fileInputRef.current?.click(); }}
           className="milkdown-toolbar__btn"
         >
-          {btn.label}
+          📄 файл
         </button>
-      ))}
-    </div>
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".md,.markdown"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+    </>
   );
 }
 

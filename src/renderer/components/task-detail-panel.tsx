@@ -10,9 +10,11 @@ import { MarkdownPlanEditor } from "@/renderer/editors/markdown-plan-editor";
 import { MarkdownPlanViewer } from "@/renderer/components/markdown-plan-viewer";
 import { McpPlanningPanel } from "@/renderer/components/mcp-planning-panel";
 import { McpPromptShortcuts } from "@/renderer/components/mcp-prompt-shortcuts";
+import { SearchBar } from "@/renderer/components/search-bar";
 import { TaskPlanWorkspace } from "@/renderer/components/task-plan-workspace";
 import type { TaskDetail, TaskStatus } from "@/shared/contracts/desktop-api";
 import { parseManagedPlanContent } from "@/shared/plans/managed-plan-content";
+import { useTextSearch } from "@/renderer/features/tasks/use-text-search";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -167,6 +169,8 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkResourceDialogOpen, setLinkResourceDialogOpen] = useState(false);
 
+  const search = useTextSearch();
+
   useEffect(() => {
     setDraftPlan(props.detail?.plan ? parseManagedPlanContent(props.detail.plan.contentMd).baseContentMd : "");
     setActiveTab("plan");
@@ -175,7 +179,41 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
     setDescriptionExpanded(false);
     setLinkDialogOpen(false);
     setLinkResourceDialogOpen(false);
+    search.close();
   }, [props.detail?.plan?.contentMd, props.detail?.task.id]);
+
+  // Ctrl+F открывает поиск (только на вкладке "план" и в view-режиме)
+  // capture: true — перехватываем до браузерного/Electron дефолта (работает даже из input/textarea)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // e.code не зависит от раскладки клавиатуры (работает и при кириллице)
+      if (e.ctrlKey && (e.key === "f" || e.code === "KeyF")) {
+        if (activeTab === "plan" && props.editorMode === "view") {
+          e.preventDefault();
+          search.open();
+        }
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => document.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, [activeTab, props.editorMode, search.open]);
+
+  // При смене вкладки закрываем поиск
+  useEffect(() => {
+    if (activeTab !== "plan") {
+      search.close();
+    }
+  }, [activeTab]);
+
+  // После каждого рендера считаем реальное количество mark в DOM
+  useEffect(() => {
+    if (!search.isOpen || !search.containerRef.current) {
+      search.setTotalCount(0);
+      return;
+    }
+    const count = search.containerRef.current.querySelectorAll("mark.search-highlight").length;
+    search.setTotalCount(count);
+  });
 
   if (!props.detail) {
     return (
@@ -410,24 +448,40 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
         {/* Tab content */}
         <div className="flex-1">
           {activeTab === "plan" ? (
-            <TaskPlanWorkspace
-            detail={detail}
-            draftPlan={draftPlan}
-            editorMode={props.editorMode}
-            isAnsweringPlanQuestion={props.isAnsweringPlanQuestion}
-            isAppendingPlanExtension={props.isAppendingPlanExtension}
-            isAppendingPlanImprovement={props.isAppendingPlanImprovement}
-            onAnswerPlanQuestion={props.onAnswerPlanQuestion}
-            isDeletingTask={props.isDeletingTask}
-              isRestoringRevision={props.isRestoringRevision}
-              isSavingPlan={props.isSavingPlan}
-              onAppendPlanExtension={props.onAppendPlanExtension}
-              onAppendPlanImprovement={props.onAppendPlanImprovement}
-              onChangeDraftPlan={setDraftPlan}
-              onRestoreRevision={(revisionId) => props.onRestorePlanRevision(detail.task.id, revisionId)}
-              onSavePlan={props.onSavePlan}
-              onSetEditorMode={props.onSetEditorMode}
-            />
+            <div ref={search.containerRef as React.RefObject<HTMLDivElement>}>
+              {search.isOpen && props.editorMode === "view" && (
+                <div className="sticky top-0 z-30 flex justify-end pb-2">
+                  <SearchBar
+                    query={search.query}
+                    currentIndex={search.currentIndex}
+                    totalCount={search.totalCount}
+                    onQueryChange={search.setQuery}
+                    onNext={search.next}
+                    onPrev={search.prev}
+                    onClose={search.close}
+                  />
+                </div>
+              )}
+              <TaskPlanWorkspace
+                detail={detail}
+                draftPlan={draftPlan}
+                editorMode={props.editorMode}
+                isAnsweringPlanQuestion={props.isAnsweringPlanQuestion}
+                isAppendingPlanExtension={props.isAppendingPlanExtension}
+                isAppendingPlanImprovement={props.isAppendingPlanImprovement}
+                onAnswerPlanQuestion={props.onAnswerPlanQuestion}
+                isDeletingTask={props.isDeletingTask}
+                isRestoringRevision={props.isRestoringRevision}
+                isSavingPlan={props.isSavingPlan}
+                searchQuery={search.isOpen && props.editorMode === "view" ? search.query : undefined}
+                onAppendPlanExtension={props.onAppendPlanExtension}
+                onAppendPlanImprovement={props.onAppendPlanImprovement}
+                onChangeDraftPlan={setDraftPlan}
+                onRestoreRevision={(revisionId) => props.onRestorePlanRevision(detail.task.id, revisionId)}
+                onSavePlan={props.onSavePlan}
+                onSetEditorMode={props.onSetEditorMode}
+              />
+            </div>
           ) : null}
 
           {activeTab === "mcp" ? <McpPlanningPanel detail={detail} /> : null}
@@ -485,7 +539,6 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
           value={detail.project.languages.length ? detail.project.languages.join(", ") : null}
         />
         <MetaField label="SKILL.md" value={detail.project.skillFilePath} />
-        <McpPromptShortcuts detail={detail} />
 
         {/* Связанные задачи */}
         <div className="flex flex-col gap-2">
@@ -584,6 +637,8 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             Привязать ресурс
           </button>
         </div>
+
+        <McpPromptShortcuts detail={detail} />
       </aside>
 
       <LinkTaskDialog

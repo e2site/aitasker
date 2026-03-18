@@ -1,13 +1,68 @@
 /*
 Назначение: Рендерит таблицу задач в стиле Jira — строка = задача, с колонками статус/название/проект/дата/ID.
+Поддерживает сортировку по кликабельным заголовкам с сохранением настроек в localStorage.
 Не входит: Фильтрация, загрузка данных и панель деталей задачи.
 */
+import { useAtom } from "jotai";
+import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
 import type { TaskRecord } from "@/shared/contracts/desktop-api";
 import { TaskStatusBadge } from "@/renderer/components/task-status-badge";
 import { cn } from "@/renderer/components/ui/class-names";
+import {
+  taskSortAtom,
+  STATUS_ORDER,
+  type SortField,
+  type TaskSortState
+} from "@/renderer/features/tasks/task-sort-state";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function sortTasks(tasks: TaskRecord[], sort: TaskSortState): TaskRecord[] {
+  return [...tasks].sort((a, b) => {
+    let cmp = 0;
+    if (sort.field === "status") {
+      cmp = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+    } else if (sort.field === "updatedAt") {
+      cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+    } else {
+      cmp = (a[sort.field] ?? "").localeCompare(b[sort.field] ?? "", "ru");
+    }
+    return sort.direction === "asc" ? cmp : -cmp;
+  });
+}
+
+interface SortableHeaderProps {
+  field: SortField;
+  label: string;
+  sort: TaskSortState;
+  onSort(field: SortField): void;
+  className?: string;
+}
+
+function SortableHeader({ field, label, sort, onSort, className }: SortableHeaderProps) {
+  const isActive = sort.field === field;
+  return (
+    <th
+      onClick={() => onSort(field)}
+      className={cn(
+        "cursor-pointer select-none px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 hover:text-slate-600 transition-colors",
+        className
+      )}
+    >
+      <span className="flex items-center gap-1">
+        {label}
+        {isActive ? (
+          sort.direction === "asc"
+            ? <ChevronUp className="size-3 text-slate-500" />
+            : <ChevronDown className="size-3 text-slate-500" />
+        ) : (
+          <ChevronsUpDown className="size-3 opacity-40" />
+        )}
+      </span>
+    </th>
+  );
 }
 
 export interface TaskTableProps {
@@ -18,6 +73,18 @@ export interface TaskTableProps {
 }
 
 export function TaskTable({ tasks, selectedTaskId, showProject, onSelect }: TaskTableProps) {
+  const [sort, setSort] = useAtom(taskSortAtom);
+
+  const handleSort = (field: SortField) => {
+    setSort((prev) =>
+      prev.field === field
+        ? { field, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { field, direction: "desc" }
+    );
+  };
+
+  const sortedTasks = sortTasks(tasks, sort);
+
   if (tasks.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 py-16 text-sm text-slate-500">
@@ -31,27 +98,19 @@ export function TaskTable({ tasks, selectedTaskId, showProject, onSelect }: Task
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50/80">
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Статус
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Задача
-            </th>
+            <SortableHeader field="status" label="Статус" sort={sort} onSort={handleSort} />
+            <SortableHeader field="title" label="Задача" sort={sort} onSort={handleSort} />
             {showProject && (
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Проект
-              </th>
+              <SortableHeader field="projectName" label="Проект" sort={sort} onSort={handleSort} />
             )}
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Обновлено
-            </th>
+            <SortableHeader field="updatedAt" label="Обновлено" sort={sort} onSort={handleSort} />
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
               ID
             </th>
           </tr>
         </thead>
         <tbody>
-          {tasks.map((task, index) => {
+          {sortedTasks.map((task, index) => {
             const isActive = task.id === selectedTaskId;
             return (
               <tr

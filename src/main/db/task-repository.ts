@@ -6,12 +6,13 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import type { TaskRecord, TaskStatus } from "../../shared/contracts/desktop-api";
 import type { AppDatabase } from "./database";
-import { projectsTable, tasksTable } from "./schema";
+import { plansTable, projectsTable, tasksTable } from "./schema";
 
 interface TaskRow {
   createdAt: Date;
   description: string;
   id: string;
+  planContentMd: string | null;
   projectId: string;
   projectName: string;
   status: string;
@@ -47,6 +48,7 @@ function toTaskRecord(row: TaskRow): TaskRecord {
     title: row.title,
     description: row.description,
     status: normalizeTaskStatus(row.status),
+    planContentMd: row.planContentMd ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
   };
@@ -96,11 +98,13 @@ export class TaskRepository {
         title: tasksTable.title,
         description: tasksTable.description,
         status: tasksTable.status,
+        planContentMd: plansTable.contentMd,
         createdAt: tasksTable.createdAt,
         updatedAt: tasksTable.updatedAt
       })
       .from(tasksTable)
       .innerJoin(projectsTable, eq(tasksTable.projectId, projectsTable.id))
+      .leftJoin(plansTable, eq(plansTable.taskId, tasksTable.id))
       .where(
         projectId
           ? and(eq(tasksTable.id, taskId), eq(tasksTable.projectId, projectId))
@@ -126,11 +130,13 @@ export class TaskRepository {
         title: tasksTable.title,
         description: tasksTable.description,
         status: tasksTable.status,
+        planContentMd: plansTable.contentMd,
         createdAt: tasksTable.createdAt,
         updatedAt: tasksTable.updatedAt
       })
       .from(tasksTable)
       .innerJoin(projectsTable, eq(tasksTable.projectId, projectsTable.id))
+      .leftJoin(plansTable, eq(plansTable.taskId, tasksTable.id))
       .where(projectId ? eq(tasksTable.projectId, projectId) : undefined)
       .orderBy(desc(tasksTable.updatedAt))
       .all();

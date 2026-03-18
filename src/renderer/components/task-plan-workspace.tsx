@@ -87,6 +87,7 @@ export interface TaskPlanWorkspaceProps {
   isDeletingTask: boolean;
   isRestoringRevision: boolean;
   isSavingPlan: boolean;
+  searchQuery?: string;
   onAnswerPlanQuestion(taskId: string, questionId: string, answer: string): void;
   onAppendPlanExtension(taskId: string, content: string): void;
   onAppendPlanImprovement(taskId: string, content: string): void;
@@ -114,6 +115,8 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
   const revisions = props.detail.planRevisions;
   const parsedPlan = parseManagedPlanContent(props.detail.plan?.contentMd ?? "");
   const dirty = props.draftPlan !== parsedPlan.baseContentMd;
+
+  const sq = props.searchQuery ?? "";
   const isBusy =
     props.isDeletingTask ||
     props.isAppendingPlanExtension ||
@@ -273,7 +276,10 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
 
               {/* Базовый план */}
               <div ref={planRef} className="relative">
-                <MarkdownPlanViewer contentMd={parsedPlan.baseContentMd} />
+                <MarkdownPlanViewer
+                  contentMd={parsedPlan.baseContentMd}
+                  searchQuery={sq || undefined}
+                />
                 {selectionPopover && (
                   <div
                     className="selection-popover"
@@ -374,6 +380,7 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
                             key={item.question.id}
                             question={item.question}
                             answer={item.answer}
+                            searchQuery={sq || undefined}
                           />
                         );
                       }
@@ -427,7 +434,10 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
                             </div>
                           </div>
                           <div className="plan-thread-message__body">
-                            <MarkdownPlanViewer contentMd={comment.content} />
+                            <MarkdownPlanViewer
+                              contentMd={comment.content}
+                              searchQuery={sq || undefined}
+                            />
                           </div>
                         </article>
                       );
@@ -562,9 +572,10 @@ function QuestionCard(props: QuestionCardProps) {
 interface QAPairCardProps {
   question: ManagedPlanComment;
   answer: ManagedPlanComment;
+  searchQuery?: string;
 }
 
-function QAPairCard({ question, answer }: QAPairCardProps) {
+function QAPairCard({ question, answer, searchQuery }: QAPairCardProps) {
   return (
     <div className="flex flex-col gap-3">
       {/* Вопрос AI — слева */}
@@ -580,7 +591,10 @@ function QAPairCard({ question, answer }: QAPairCardProps) {
             <span className="text-xs text-slate-400">{formatCommentDate(question.createdAt)}</span>
           </div>
           <div className="plan-thread-message__body">
-            <MarkdownPlanViewer contentMd={question.content} />
+            <MarkdownPlanViewer
+              contentMd={question.content}
+              searchQuery={searchQuery}
+            />
           </div>
         </article>
       </div>
@@ -597,7 +611,10 @@ function QAPairCard({ question, answer }: QAPairCardProps) {
             <span className="text-xs text-slate-400">{formatCommentDate(answer.createdAt)}</span>
           </div>
           <div className="plan-thread-message__body">
-            <MarkdownPlanViewer contentMd={answer.content} />
+            <MarkdownPlanViewer
+              contentMd={answer.content}
+              searchQuery={searchQuery}
+            />
           </div>
         </article>
       </div>

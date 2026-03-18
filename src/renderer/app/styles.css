@@ -390,6 +390,20 @@ textarea {
   @apply border-0 bg-transparent p-0 shadow-none;
 }
 
+/* Search highlight */
+
+mark.search-highlight {
+  background: #fef08a;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+mark.search-highlight.active {
+  background: #f97316;
+  color: white;
+}
+
 .task-meta-row {
   @apply flex flex-wrap items-center gap-3 text-xs text-slate-400;
 }

@@ -51,7 +51,8 @@ const REASON_LABELS: Partial<Record<DesktopDataChangeEvent["reason"], string>> =
 
 async function sendTaskNotification(
   event: DesktopDataChangeEvent,
-  getWindow: () => BrowserWindowType | null
+  getWindow: () => BrowserWindowType | null,
+  getTaskDetail: (taskId: string) => Promise<{ task: { title: string }; project: { name: string } } | null>
 ): Promise<void> {
   if (!NOTIFY_REASONS.has(event.reason)) return;
 
@@ -59,11 +60,22 @@ async function sendTaskNotification(
   if (!Notification.isSupported()) return;
 
   const label = REASON_LABELS[event.reason] ?? event.reason;
-  const taskSuffix = event.taskId ? ` · ${event.taskId.slice(0, 8).toUpperCase()}` : "";
+
+  let taskLine = "";
+  if (event.taskId) {
+    try {
+      const detail = await getTaskDetail(event.taskId);
+      if (detail) {
+        taskLine = `[${detail.project.name}] ${detail.task.title}\n`;
+      }
+    } catch {
+      // fallback — без имени задачи
+    }
+  }
 
   const notification = new Notification({
     title: "AITasker",
-    body: label + taskSuffix,
+    body: taskLine + label,
     silent: true
   });
 
@@ -120,6 +132,11 @@ async function createMainWindow(runtime: MainProcessRuntime): Promise<void> {
 }
 
 export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
+  // Нужно для корректной иконки в Windows-уведомлениях (в dev-режиме electron-builder не задаёт appUserModelId)
+  if (process.platform === "win32") {
+    runtime.app.setAppUserModelId("com.aitasker.app");
+  }
+
   runtime.app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
     const databaseContext = createAppDatabase(runtime.app.getPath("userData"));
@@ -165,7 +182,7 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
         for (const window of runtime.BrowserWindow.getAllWindows()) {
           window.webContents.send(DATA_CHANGED_CHANNEL, event);
         }
-        void sendTaskNotification(event, () => mainWindow);
+        void sendTaskNotification(event, () => mainWindow, appService.getTaskDetail.bind(appService));
       },
       planRepository,
       platform: process.platform,

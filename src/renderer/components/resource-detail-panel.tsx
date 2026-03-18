@@ -3,7 +3,7 @@
 Не входит: Список ресурсов, привязка к задачам и навигация.
 */
 import { useEffect, useState } from "react";
-import { Eye, Pencil, Trash2 } from "lucide-react";
+import { Check, Copy, Eye, Pencil, Trash2 } from "lucide-react";
 import { MarkdownPlanEditor } from "@/renderer/editors/markdown-plan-editor";
 import { MarkdownPlanViewer } from "@/renderer/components/markdown-plan-viewer";
 import type { ResourceRecord } from "@/shared/contracts/desktop-api";
@@ -27,6 +27,7 @@ export function ResourceDetailPanel({
   const [nameDraft, setNameDraft] = useState(resource.name);
   const [contentDraft, setContentDraft] = useState(resource.contentMd);
   const [editorMode, setEditorMode] = useState<"view" | "edit">("view");
+  const [copied, setCopied] = useState(false);
 
   // Сбрасываем черновики при смене ресурса
   useEffect(() => {
@@ -46,6 +47,13 @@ export function ResourceDetailPanel({
     setEditingName(false);
   };
 
+  const copyPrompt = async () => {
+    const text = `Для получения ресурсов "${resource.name}" выполни get_resource с id "${resource.id}"`;
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
   const saveContent = () => {
     if (contentDraft !== resource.contentMd) {
       onSave(resource.id, { contentMd: contentDraft });
@@ -59,6 +67,14 @@ export function ResourceDetailPanel({
       <div className="mb-4 flex items-center justify-between gap-2">
         <span className="text-xs text-slate-400 font-mono">RES-{resource.id.slice(0, 8).toUpperCase()}</span>
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            title="Скопировать промт"
+            onClick={copyPrompt}
+            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
+          </button>
           <button
             type="button"
             title={editorMode === "view" ? "Редактировать" : "Просмотр"}

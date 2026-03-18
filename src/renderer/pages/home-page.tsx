@@ -99,7 +99,8 @@ export function HomePage() {
       (task) =>
         !searchQuery ||
         task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        task.description.toLowerCase().includes(searchQuery.toLowerCase())
+        task.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (task.planContentMd ?? "").toLowerCase().includes(searchQuery.toLowerCase())
     );
 
   // Reset selected project if it no longer exists

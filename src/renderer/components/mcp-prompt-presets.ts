@@ -109,16 +109,37 @@ export function resolvePrompt(
   return renderPromptTemplate(template, vars);
 }
 
+const PROMPTS_WITH_CONTEXT = new Set<PromptId>([
+  "plan-task", "clarify-plan", "implementation", "finish-task", "consolidate-discussion"
+]);
+
+function buildContextSuffix(detail: TaskDetail): string {
+  const lines: string[] = [];
+
+  for (const r of detail.linkedResources) {
+    lines.push(`- Ресурс "${r.name}": выполни get_resource с id "${r.resourceId}"`);
+  }
+
+  for (const t of detail.linkedTasks) {
+    lines.push(`- Связанная задача "${t.title}" (${t.taskId}): выполни get_task с taskId "${t.taskId}"`);
+  }
+
+  if (lines.length === 0) return "";
+
+  return "\n\nКонтекст задачи:\n" + lines.join("\n");
+}
+
 export function buildMcpPromptPresets(
   detail: TaskDetail,
   overrides: PromptOverrideRecord[] = []
 ): McpPromptPreset[] {
   const vars = getPromptVars(detail);
+  const suffix = buildContextSuffix(detail);
 
   return (Object.keys(BASE_PROMPT_TEMPLATES) as PromptId[]).map((id) => ({
     id,
     title: PROMPT_META[id].title,
     description: PROMPT_META[id].description,
-    prompt: resolvePrompt(id, vars, overrides)
+    prompt: resolvePrompt(id, vars, overrides) + (PROMPTS_WITH_CONTEXT.has(id) ? suffix : "")
   }));
 }

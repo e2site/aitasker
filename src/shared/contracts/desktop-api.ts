@@ -47,6 +47,7 @@ export const taskRecordSchema = z.object({
   title: z.string(),
   description: z.string(),
   status: taskStatusSchema,
+  planContentMd: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });

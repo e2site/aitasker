@@ -786,6 +786,7 @@ function toTaskRecord(row) {
     title: row.title,
     description: row.description,
     status: normalizeTaskStatus(row.status),
+    planContentMd: row.planContentMd ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
   };
@@ -820,9 +821,10 @@ var TaskRepository = class {
       title: tasksTable.title,
       description: tasksTable.description,
       status: tasksTable.status,
+      planContentMd: plansTable.contentMd,
       createdAt: tasksTable.createdAt,
       updatedAt: tasksTable.updatedAt
-    }).from(tasksTable).innerJoin(projectsTable, eq7(tasksTable.projectId, projectsTable.id)).where(
+    }).from(tasksTable).innerJoin(projectsTable, eq7(tasksTable.projectId, projectsTable.id)).leftJoin(plansTable, eq7(plansTable.taskId, tasksTable.id)).where(
       projectId ? and(eq7(tasksTable.id, taskId), eq7(tasksTable.projectId, projectId)) : eq7(tasksTable.id, taskId)
     ).get();
     return row ? toTaskRecord(row) : null;
@@ -839,9 +841,10 @@ var TaskRepository = class {
       title: tasksTable.title,
       description: tasksTable.description,
       status: tasksTable.status,
+      planContentMd: plansTable.contentMd,
       createdAt: tasksTable.createdAt,
       updatedAt: tasksTable.updatedAt
-    }).from(tasksTable).innerJoin(projectsTable, eq7(tasksTable.projectId, projectsTable.id)).where(projectId ? eq7(tasksTable.projectId, projectId) : void 0).orderBy(desc4(tasksTable.updatedAt)).all();
+    }).from(tasksTable).innerJoin(projectsTable, eq7(tasksTable.projectId, projectsTable.id)).leftJoin(plansTable, eq7(plansTable.taskId, tasksTable.id)).where(projectId ? eq7(tasksTable.projectId, projectId) : void 0).orderBy(desc4(tasksTable.updatedAt)).all();
     return rows.map(toTaskRecord);
   }
   async touch(taskId) {
@@ -954,6 +957,7 @@ var taskRecordSchema = z.object({
   title: z.string(),
   description: z.string(),
   status: taskStatusSchema,
+  planContentMd: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -3252,15 +3256,25 @@ var REASON_LABELS = {
   "append-plan-extension": "\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u043F\u043B\u0430\u043D\u0430",
   "append-plan-improvement": "\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0430 \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430 \u043F\u043B\u0430\u043D\u0430"
 };
-async function sendTaskNotification(event, getWindow) {
+async function sendTaskNotification(event, getWindow, getTaskDetail) {
   if (!NOTIFY_REASONS.has(event.reason)) return;
   const { Notification } = await import("electron");
   if (!Notification.isSupported()) return;
   const label = REASON_LABELS[event.reason] ?? event.reason;
-  const taskSuffix = event.taskId ? ` \xB7 ${event.taskId.slice(0, 8).toUpperCase()}` : "";
+  let taskLine = "";
+  if (event.taskId) {
+    try {
+      const detail = await getTaskDetail(event.taskId);
+      if (detail) {
+        taskLine = `[${detail.project.name}] ${detail.task.title}
+`;
+      }
+    } catch {
+    }
+  }
   const notification = new Notification({
     title: "AITasker",
-    body: label + taskSuffix,
+    body: taskLine + label,
     silent: true
   });
   notification.on("click", () => {
@@ -3302,6 +3316,9 @@ async function createMainWindow(runtime) {
   await mainWindow.loadFile(join3(RENDERER_DIST, "index.html"));
 }
 function bootstrapMainProcess(runtime) {
+  if (process.platform === "win32") {
+    runtime.app.setAppUserModelId("com.aitasker.app");
+  }
   runtime.app.whenReady().then(async () => {
     Menu2.setApplicationMenu(null);
     const databaseContext = createAppDatabase(runtime.app.getPath("userData"));
@@ -3343,7 +3360,7 @@ function bootstrapMainProcess(runtime) {
         for (const window of runtime.BrowserWindow.getAllWindows()) {
           window.webContents.send(DATA_CHANGED_CHANNEL, event);
         }
-        void sendTaskNotification(event, () => mainWindow);
+        void sendTaskNotification(event, () => mainWindow, appService.getTaskDetail.bind(appService));
       },
       planRepository,
       platform: process.platform,

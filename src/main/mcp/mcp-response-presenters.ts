@@ -74,6 +74,7 @@ function serializeLinkedResource(link: TaskDetail["linkedResources"][number]) {
   return {
     comment: link.comment,
     name: link.name,
+    readHint: `Для чтения содержимого вызови get_resource с id "${link.resourceId}".`,
     resourceId: link.resourceId
   };
 }
@@ -111,11 +112,21 @@ export function serializePlan(plan: TaskDetail["plan"], taskId: string) {
 }
 
 export function serializeTaskDetail(detail: TaskDetail) {
+  const linkedResources = detail.linkedResources.map(serializeLinkedResource);
+
   return {
-    linkedResources: detail.linkedResources.map(serializeLinkedResource),
+    linkedResources,
     linkedTasks: detail.linkedTasks.map(serializeLinkedTask),
     plan: serializePlanSummary(detail.plan, detail.task.id),
     project: serializeProjectSummary(detail.project),
+    resourceReadme: {
+      hasLinkedResources: linkedResources.length > 0,
+      readTool: "get_resource",
+      recommendedAction:
+        linkedResources.length > 0
+          ? "После get_task прочитай связанные ресурсы через get_resource, если они нужны для планирования или реализации."
+          : "У задачи нет связанных ресурсов."
+    },
     task: serializeTask(detail.task)
   };
 }

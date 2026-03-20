@@ -30,6 +30,11 @@ export interface ProjectPromptContext {
   skillFilePath: string | null;
 }
 
+const RESOURCE_AWARE_RULES = [
+  "inspect_linked_resources_from_get_task",
+  "read_required_resources_via_get_resource_before_answer"
+];
+
 function buildProjectPromptVars(context: ProjectPromptContext): PromptVariable[] {
   const projectPath = context.rootPath ?? "<укажи путь проекта>";
   const skillFilePath = context.skillFilePath ?? `${projectPath}\\SKILL.md`;
@@ -104,7 +109,7 @@ export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
   "read": ["get_task", "get_plan"],
   "write": ["save_plan", "update_task_status"],
   "statusFlow": ["planning", "implementation"],
-  "rules": ["read_current_plan_if_exists", "save_open_questions_separately"]
+  "rules": ["read_current_plan_if_exists", "save_open_questions_separately", "${RESOURCE_AWARE_RULES[0]}", "${RESOURCE_AWARE_RULES[1]}"]
 }`,
   "clarify-plan":
     `{
@@ -114,7 +119,7 @@ export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
   "taskId": "{{taskId}}",
   "read": ["get_task", "get_plan"],
   "write": ["save_plan"],
-  "rules": ["review_current_plan", "add_missing_steps", "save_open_questions_separately"]
+  "rules": ["review_current_plan", "add_missing_steps", "save_open_questions_separately", "${RESOURCE_AWARE_RULES[0]}", "${RESOURCE_AWARE_RULES[1]}"]
 }`,
   "implementation":
     `{
@@ -130,7 +135,9 @@ export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
     "implement_by_plan_steps",
     "append_context_via_extension",
     "append_decisions_and_issues_via_improvement",
-    "keep_status_implementation"
+    "keep_status_implementation",
+    "${RESOURCE_AWARE_RULES[0]}",
+    "${RESOURCE_AWARE_RULES[1]}"
   ]
 }`,
   "finish-task":
@@ -142,7 +149,7 @@ export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
   "read": ["get_task", "get_plan"],
   "write": ["append_plan_extension", "append_plan_improvement", "update_task_status"],
   "status": "completed",
-  "rules": ["verify_plan_done", "record_final_notes_if_needed"]
+  "rules": ["verify_plan_done", "record_final_notes_if_needed", "${RESOURCE_AWARE_RULES[0]}", "${RESOURCE_AWARE_RULES[1]}"]
 }`,
   "consolidate-discussion":
     `{
@@ -152,7 +159,7 @@ export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
   "taskId": "{{taskId}}",
   "read": ["get_task", "get_plan"],
   "write": ["consolidate_plan_discussion"],
-  "rules": ["merge_extensions_and_improvements_into_plan", "save_open_questions_separately"]
+  "rules": ["merge_extensions_and_improvements_into_plan", "save_open_questions_separately", "${RESOURCE_AWARE_RULES[0]}", "${RESOURCE_AWARE_RULES[1]}"]
 }`,
   "project-skill":
     `{
@@ -223,7 +230,7 @@ function buildContextSuffix(detail: TaskDetail): string {
   const lines: string[] = [];
 
   for (const r of detail.linkedResources) {
-    lines.push(`resource:${r.resourceId} "${r.name}"`);
+    lines.push(`resource:${r.resourceId} "${r.name}" -> после get_task прочитай через get_resource("${r.resourceId}")`);
   }
 
   for (const t of detail.linkedTasks) {
@@ -232,7 +239,12 @@ function buildContextSuffix(detail: TaskDetail): string {
 
   if (lines.length === 0) return "";
 
-  return "\n\nКонтекст:\n" + lines.join("\n");
+  const resourceInstruction =
+    detail.linkedResources.length > 0
+      ? "\nСначала проверь linkedResources в ответе get_task. Если ресурсы есть и они влияют на задачу, обязательно открой их через get_resource до ответа."
+      : "";
+
+  return "\n\nКонтекст:\n" + lines.join("\n") + resourceInstruction;
 }
 
 export function buildPlanCommentPrompt(detail: TaskDetail, kind: "extension" | "improvement", commentId: string): string {

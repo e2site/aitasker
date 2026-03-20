@@ -365,7 +365,8 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
   server.registerTool(
     "get_task",
     {
-      description: "Получить задачу и ее текущий план по taskId без активации проекта.",
+      description:
+        "Получить задачу по taskId без активации проекта, включая linkedResources и linkedTasks. Если linkedResources не пустой, их содержимое нужно читать отдельно через get_resource.",
       inputSchema: {
         taskId: z.string()
       }
@@ -734,10 +735,18 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
   "read": ["get_active_project", "get_task", "get_plan"],
   "write": ["save_plan", "update_task_status"],
   "statusFlow": ["planning", "implementation"],
-  "rules": ["resolve_project", "resolve_task", "save_open_questions_separately"]
+  "rules": [
+    "resolve_project",
+    "resolve_task",
+    "inspect_linked_resources_from_get_task",
+    "read_required_resources_via_get_resource_before_answer",
+    "save_open_questions_separately"
+  ]
 }
 
 Доп. инструкции: ${instructions?.trim() || "none"}
+
+После get_task обязательно проверь linkedResources. Если там есть ресурсы, прочитай нужные через get_resource до построения плана.
 
 Не останавливайся на анализе. Сохрани результат в AITasker до финального ответа.`
           }
@@ -782,10 +791,19 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
   "taskRef": "${taskRef}",
   "read": ["get_task", "get_plan"],
   "write": ["consolidate_plan_discussion"],
-  "rules": ["resolve_project", "resolve_task", "merge_discussion_into_plan", "save_open_questions_separately"]
+  "rules": [
+    "resolve_project",
+    "resolve_task",
+    "inspect_linked_resources_from_get_task",
+    "read_required_resources_via_get_resource_before_answer",
+    "merge_discussion_into_plan",
+    "save_open_questions_separately"
+  ]
 }
 
 Доп. инструкции: ${instructions?.trim() || "none"}
+
+После get_task обязательно проверь linkedResources. Если они есть, прочитай относящиеся к задаче ресурсы через get_resource перед обновлением плана.
 
 Не останавливайся на анализе. Обязательно сохрани обновленный план до финального ответа.`
           }

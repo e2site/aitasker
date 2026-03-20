@@ -51,8 +51,8 @@ export function McpPlanningPanel({ detail }: McpPlanningPanelProps) {
             <p className="app-label">Планирование через MCP</p>
             <h3 className="text-xl font-semibold tracking-tight text-slate-950">Базовый flow по задаче</h3>
             <p className="max-w-3xl text-sm leading-6 text-slate-600">
-              Внешний агент должен сначала активировать проект, проверить карточку проекта, затем перейти к
-              планированию или реализации задачи в рамках MCP-инструментов AITasker.
+              Внешний агент должен работать через короткие JSON-команды с явным `projectId`, чтобы сценарий не
+              зависел от случайно сменившегося активного проекта.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-right shadow-sm">
@@ -69,22 +69,22 @@ export function McpPlanningPanel({ detail }: McpPlanningPanelProps) {
           <div className="mcp-flow-card__index">1</div>
           <p className="mcp-flow-card__title">Активация проекта</p>
           <p className="mcp-flow-card__text">
-            Вызвать `activate_project`, затем `get_active_project` и убедиться, что карточка проекта заполнена.
+            Передать короткую JSON-команду с `projectId`, активировать проект и при необходимости проверить карточку.
           </p>
         </article>
         <article className="mcp-flow-card">
           <div className="mcp-flow-card__index">2</div>
           <p className="mcp-flow-card__title">Планирование</p>
           <p className="mcp-flow-card__text">
-            Разрешить задачу, выставить статус `planning`, прочитать задачу и план, затем сохранить план обратно.
+            Использовать команду с `taskId`, перевести задачу в `planning`, прочитать задачу и план, затем сохранить план.
           </p>
         </article>
         <article className="mcp-flow-card">
           <div className="mcp-flow-card__index">3</div>
           <p className="mcp-flow-card__title">Реализация</p>
           <p className="mcp-flow-card__text">
-            После сохранения плана перевести задачу в `implementation` и использовать `append_plan_extension` или
-            `append_plan_improvement` для уточнений, решений и рисков.
+            После сохранения плана держать статус `implementation` и фиксировать решения через `append_plan_extension`
+            или `append_plan_improvement`.
           </p>
         </article>
         <article className="mcp-flow-card">

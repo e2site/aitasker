@@ -24,8 +24,8 @@ function sortTasks(tasks: TaskRecord[], sort: TaskSortState): TaskRecord[] {
     let cmp = 0;
     if (sort.field === "status") {
       cmp = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-    } else if (sort.field === "updatedAt") {
-      cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+    } else if (sort.field === "createdAt" || sort.field === "updatedAt") {
+      cmp = new Date(a[sort.field]).getTime() - new Date(b[sort.field]).getTime();
     } else {
       cmp = (a[sort.field] ?? "").localeCompare(b[sort.field] ?? "", "ru");
     }
@@ -103,6 +103,7 @@ export function TaskTable({ tasks, selectedTaskId, showProject, onSelect }: Task
             {showProject && (
               <SortableHeader field="projectName" label="Проект" sort={sort} onSort={handleSort} />
             )}
+            <SortableHeader field="createdAt" label="Создано" sort={sort} onSort={handleSort} />
             <SortableHeader field="updatedAt" label="Обновлено" sort={sort} onSort={handleSort} />
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
               ID
@@ -148,6 +149,11 @@ export function TaskTable({ tasks, selectedTaskId, showProject, onSelect }: Task
                     </span>
                   </td>
                 )}
+
+                {/* Created at */}
+                <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
+                  {formatDate(task.createdAt)}
+                </td>
 
                 {/* Updated at */}
                 <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">

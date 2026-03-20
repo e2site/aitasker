@@ -1,8 +1,8 @@
 /*
-Назначение: Хранит готовые MCP-промты для задачи, чтобы их можно было переиспользовать в workflow-экране и быстрых кнопках.
+Назначение: Хранит и собирает единый набор коротких MCP-команд для проекта, задачи и точечных операций по плану.
 Не входит: Отрисовка UI-кнопок, копирование в буфер и состояние feedback после копирования.
 */
-import type { PromptOverrideRecord, TaskDetail } from "@/shared/contracts/desktop-api";
+import type { ProjectRecord, PromptOverrideRecord, TaskDetail } from "@/shared/contracts/desktop-api";
 import type { PromptVariable } from "@/shared/prompts/prompt-template";
 import { renderPromptTemplate } from "@/shared/prompts/prompt-template";
 
@@ -23,75 +23,181 @@ export type PromptId =
   | "consolidate-discussion"
   | "project-skill";
 
-/** Возвращает переменные промта для конкретной задачи. */
-export function getPromptVars(detail: TaskDetail): PromptVariable[] {
-  const projectName = detail.task.projectName;
-  const taskTitle = detail.task.title;
-  const taskId = detail.task.id;
-  const projectPath = detail.project.rootPath ?? "<укажи путь проекта>";
-  const skillFilePath = detail.project.skillFilePath ?? `${projectPath}\\SKILL.md`;
+export interface ProjectPromptContext {
+  id: string;
+  name: string;
+  rootPath: string | null;
+  skillFilePath: string | null;
+}
+
+function buildProjectPromptVars(context: ProjectPromptContext): PromptVariable[] {
+  const projectPath = context.rootPath ?? "<укажи путь проекта>";
+  const skillFilePath = context.skillFilePath ?? `${projectPath}\\SKILL.md`;
 
   return [
-    { name: "projectName", value: projectName, placeholder: "«Название проекта»" },
-    { name: "taskTitle", value: taskTitle, placeholder: "«Название задачи»" },
-    { name: "taskId", value: taskId, placeholder: "«ID задачи»" },
+    { name: "projectId", value: context.id, placeholder: "project-id" },
+    { name: "projectName", value: context.name, placeholder: "«Название проекта»" },
+    { name: "taskTitle", value: "", placeholder: "«Название задачи»" },
+    { name: "taskId", value: "", placeholder: "«ID задачи»" },
     { name: "projectPath", value: projectPath, placeholder: "«Путь к проекту»" },
     { name: "skillFilePath", value: skillFilePath, placeholder: "«Путь к SKILL.md»" }
   ];
 }
 
+/** Возвращает переменные промта для конкретной задачи. */
+export function getPromptVars(detail: TaskDetail): PromptVariable[] {
+  return buildProjectPromptVars({
+    id: detail.task.projectId,
+    name: detail.task.projectName,
+    rootPath: detail.project.rootPath,
+    skillFilePath: detail.project.skillFilePath
+  }).map((variable) => {
+    if (variable.name === "taskTitle") {
+      return { ...variable, value: detail.task.title };
+    }
+
+    if (variable.name === "taskId") {
+      return { ...variable, value: detail.task.id };
+    }
+
+    return variable;
+  });
+}
+
+/** Возвращает переменные промта для операций на уровне проекта без выбранной задачи. */
+export function getProjectPromptVars(project: Pick<ProjectRecord, "id" | "name" | "rootPath" | "skillFilePath">): PromptVariable[] {
+  return buildProjectPromptVars({
+    id: project.id,
+    name: project.name,
+    rootPath: project.rootPath,
+    skillFilePath: project.skillFilePath
+  });
+}
+
 /** Базовые шаблоны промтов. */
 export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
   "activate-project":
-    `Активируй в aitasker проект "{{projectName}}". Проверь карточку проекта и, если нужно, заполни название, описание, путь "{{projectPath}}" и используемые языки. Кратко отчитайся, что именно было обновлено.`,
+    `{
+  "mcp": "aitasker",
+  "projectId": "{{projectId}}",
+  "action": "activate_project_profile",
+  "read": ["get_active_project"],
+  "write": ["update_project_profile"],
+  "rules": ["ensure_project_profile_complete"]
+}`,
   "agent-task-prompt":
-    `Активируй в aitasker проект "{{projectName}}". Распланируй задачу, сохрани план через MCP и переведи задачу в статус planning. Выполнять сразу не надо. Задача: `,
+    `{
+  "mcp": "aitasker",
+  "projectId": "{{projectId}}",
+  "action": "create_task",
+  "fillRequired": ["title", "description"],
+  "nextStatus": "planning",
+  "rules": ["create_task_in_project", "save_plan_after_creation"]
+}
+Задача:`,
   "plan-task":
-    `Активируй в aitasker проект "{{projectName}}", найди задачу "{{taskTitle}}" ({{taskId}}), переведи ее в статус planning, распланируй задачу, сохрани план обратно через MCP и затем переведи задачу в статус implementation.`,
+    `{
+  "mcp": "aitasker",
+  "projectId": "{{projectId}}",
+  "action": "plan_task",
+  "taskId": "{{taskId}}",
+  "read": ["get_task", "get_plan"],
+  "write": ["save_plan", "update_task_status"],
+  "statusFlow": ["planning", "implementation"],
+  "rules": ["read_current_plan_if_exists", "save_open_questions_separately"]
+}`,
   "clarify-plan":
-    `Активируй в aitasker проект "{{projectName}}", открой задачу "{{taskTitle}}" ({{taskId}}), перечитай текущий план, уточни его, добавь недостающие шаги и открытые вопросы, затем сохрани обновленный план обратно через MCP.`,
+    `{
+  "mcp": "aitasker",
+  "projectId": "{{projectId}}",
+  "action": "clarify_plan",
+  "taskId": "{{taskId}}",
+  "read": ["get_task", "get_plan"],
+  "write": ["save_plan"],
+  "rules": ["review_current_plan", "add_missing_steps", "save_open_questions_separately"]
+}`,
   "implementation":
-    `Активируй в aitasker проект "{{projectName}}", открой задачу "{{taskTitle}}" ({{taskId}}), проверь план, приступай к реализации по шагам плана и добавляй расширения через append_plan_extension, а отдельные доработки через append_plan_improvement. Статус задачи держи implementation.`,
+    `{
+  "mcp": "aitasker",
+  "projectId": "{{projectId}}",
+  "action": "implement_task",
+  "taskId": "{{taskId}}",
+  "read": ["get_task", "get_plan"],
+  "write": ["append_plan_extension", "append_plan_improvement", "update_task_status"],
+  "status": "implementation",
+  "rules": [
+    "check_plan_before_work",
+    "implement_by_plan_steps",
+    "append_context_via_extension",
+    "append_decisions_and_issues_via_improvement",
+    "keep_status_implementation"
+  ]
+}`,
   "finish-task":
-    `Активируй в aitasker проект "{{projectName}}", открой задачу "{{taskTitle}}" ({{taskId}}), проверь что план выполнен, при необходимости добавь финальное расширение или доработку плана и переведи задачу в статус completed.`,
+    `{
+  "mcp": "aitasker",
+  "projectId": "{{projectId}}",
+  "action": "complete_task",
+  "taskId": "{{taskId}}",
+  "read": ["get_task", "get_plan"],
+  "write": ["append_plan_extension", "append_plan_improvement", "update_task_status"],
+  "status": "completed",
+  "rules": ["verify_plan_done", "record_final_notes_if_needed"]
+}`,
   "consolidate-discussion":
-    `Активируй в aitasker проект "{{projectName}}", открой задачу "{{taskTitle}}" ({{taskId}}), перечитай текущий план, расширения и доработки, затем собери новый цельный Markdown-план и вызови consolidate_plan_discussion, чтобы очистить отдельные блоки переписки.`,
+    `{
+  "mcp": "aitasker",
+  "projectId": "{{projectId}}",
+  "action": "consolidate_plan_discussion",
+  "taskId": "{{taskId}}",
+  "read": ["get_task", "get_plan"],
+  "write": ["consolidate_plan_discussion"],
+  "rules": ["merge_extensions_and_improvements_into_plan", "save_open_questions_separately"]
+}`,
   "project-skill":
-    `Активируй в aitasker проект "{{projectName}}", проверь карточку проекта, затем создай или обнови SKILL.md в "{{skillFilePath}}". После записи сохрани путь к skill-файлу в карточке проекта и кратко опиши, что вошло в SKILL.md.`
+    `{
+  "mcp": "aitasker",
+  "projectId": "{{projectId}}",
+  "action": "sync_project_skill",
+  "skillFilePath": "{{skillFilePath}}",
+  "read": ["get_active_project"],
+  "write": ["update_project_profile"],
+  "rules": ["create_or_update_skill_file", "sync_skill_path_to_project_profile"]
+}`
 };
 
 const PROMPT_META: Record<PromptId, { title: string; description: string }> = {
   "activate-project": {
     title: "Активация проекта",
-    description: "Заполнить карточку проекта до начала работы с задачами."
+    description: "Активировать проект и проверить карточку без длинного текстового сценария."
   },
   "agent-task-prompt": {
     title: "Создать задачу в агенте",
-    description: "Промт для создания и планирования новой задачи через агента."
+    description: "Короткая команда для создания задачи, когда title и description будут переданы отдельно."
   },
   "plan-task": {
     title: "Планирование задачи",
-    description: "Базовый стартовый сценарий для создания или обновления плана."
+    description: "Короткая команда для перевода задачи в planning и сохранения плана."
   },
   "clarify-plan": {
     title: "Уточнение плана",
-    description: "Пересмотреть текущий план и добавить открытые вопросы или недостающие шаги."
+    description: "Короткая команда для перечитывания плана и его уточнения."
   },
   "implementation": {
     title: "Переход к реализации",
-    description: "Использовать готовый план как вход для следующего этапа работы."
+    description: "Короткая команда для реализации по шагам плана."
   },
   "finish-task": {
     title: "Завершение задачи",
-    description: "Закрыть задачу, синхронизировать статус и финальные расширения или доработки."
+    description: "Короткая команда для финальной проверки и перевода задачи в completed."
   },
   "consolidate-discussion": {
     title: "Сжать переписку в план",
-    description: "Собрать переписку по расширениям и доработкам обратно в единый план и очистить диалог."
+    description: "Короткая команда для сборки нового плана из расширений и доработок."
   },
   "project-skill": {
     title: "Создание SKILL.md",
-    description: "Подготовить или обновить skill-файл проекта."
+    description: "Короткая команда для обновления SKILL.md и карточки проекта."
   }
 };
 
@@ -117,16 +223,36 @@ function buildContextSuffix(detail: TaskDetail): string {
   const lines: string[] = [];
 
   for (const r of detail.linkedResources) {
-    lines.push(`- Ресурс "${r.name}": выполни get_resource с id "${r.resourceId}"`);
+    lines.push(`resource:${r.resourceId} "${r.name}"`);
   }
 
   for (const t of detail.linkedTasks) {
-    lines.push(`- Связанная задача "${t.title}" (${t.taskId}): выполни get_task с taskId "${t.taskId}"`);
+    lines.push(`task:${t.taskId} "${t.title}"`);
   }
 
   if (lines.length === 0) return "";
 
-  return "\n\nКонтекст задачи:\n" + lines.join("\n");
+  return "\n\nКонтекст:\n" + lines.join("\n");
+}
+
+export function buildPlanCommentPrompt(detail: TaskDetail, kind: "extension" | "improvement", commentId: string): string {
+  if (kind === "extension") {
+    return `{
+  "mcp": "aitasker",
+  "projectId": "${detail.task.projectId}",
+  "action": "review_plan_extension",
+  "taskId": "${detail.task.id}",
+  "extensionId": "${commentId}"
+}`;
+  }
+
+  return `{
+  "mcp": "aitasker",
+  "projectId": "${detail.task.projectId}",
+  "action": "review_plan_improvement",
+  "taskId": "${detail.task.id}",
+  "improvementId": "${commentId}"
+}`;
 }
 
 export function buildMcpPromptPresets(

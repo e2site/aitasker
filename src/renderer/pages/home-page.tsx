@@ -36,16 +36,8 @@ import {
   useUnlinkResourceMutation
 } from "@/renderer/features/resources/use-resource-mutations";
 import type { TaskStatus } from "@/shared/contracts/desktop-api";
+import { getTaskStatusMeta } from "@/renderer/features/tasks/task-status-meta";
 import { cn } from "@/renderer/components/ui/class-names";
-
-const STATUS_DOT_COLORS: Record<TaskStatus, string> = {
-  new: "#94a3b8",
-  planning: "#38bdf8",
-  requires_clarification: "#f87171",
-  implementation: "#fbbf24",
-  testing: "#a855f7",
-  completed: "#34d399",
-};
 
 export function HomePage() {
   const projectsQuery = useProjectsQuery();
@@ -236,7 +228,7 @@ export function HomePage() {
                     "size-2.5 rounded-full transition hover:scale-125",
                     task.id === selectedTaskId ? "ring-2 ring-slate-400 ring-offset-1" : ""
                   )}
-                  style={{ backgroundColor: STATUS_DOT_COLORS[task.status] }}
+                  style={{ backgroundColor: getTaskStatusMeta(task.status).dotColor }}
                 />
               ))}
             </div>

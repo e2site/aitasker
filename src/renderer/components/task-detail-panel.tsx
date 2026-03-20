@@ -14,6 +14,7 @@ import { SearchBar } from "@/renderer/components/search-bar";
 import { TaskPlanWorkspace } from "@/renderer/components/task-plan-workspace";
 import type { TaskDetail, TaskStatus } from "@/shared/contracts/desktop-api";
 import { parseManagedPlanContent } from "@/shared/plans/managed-plan-content";
+import { getTaskStatusMeta, TASK_STATUS_LIST } from "@/renderer/features/tasks/task-status-meta";
 import { useTextSearch } from "@/renderer/features/tasks/use-text-search";
 import {
   DropdownMenu,
@@ -29,43 +30,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "mcp", label: "MCP workflow" },
   { id: "session", label: "Сессия" },
 ];
-
-const TASK_STATUSES: { label: string; value: TaskStatus }[] = [
-  { value: "new", label: "Новая" },
-  { value: "planning", label: "Планирование" },
-  { value: "requires_clarification", label: "Требует уточнений" },
-  { value: "implementation", label: "Реализация" },
-  { value: "testing", label: "Тестирование" },
-  { value: "completed", label: "Выполнено" },
-];
-
-const STATUS_DOT_COLORS: Record<TaskStatus, string> = {
-  new: "bg-slate-400",
-  planning: "bg-sky-500",
-  requires_clarification: "bg-rose-500",
-  implementation: "bg-amber-500",
-  testing: "bg-purple-500",
-  completed: "bg-emerald-500",
-};
-
-const STATUS_TEXT_COLORS: Record<TaskStatus, string> = {
-  new: "text-slate-500",
-  planning: "text-sky-600",
-  requires_clarification: "text-rose-600",
-  implementation: "text-amber-600",
-  testing: "text-purple-600",
-  completed: "text-emerald-600",
-};
-
-// Цвета фона бейджей в выпадающем списке
-const STATUS_BADGE_CLASSES: Record<TaskStatus, string> = {
-  new: "bg-slate-100 text-slate-700 hover:bg-slate-200",
-  planning: "bg-sky-100 text-sky-800 hover:bg-sky-200",
-  requires_clarification: "bg-rose-100 text-rose-800 hover:bg-rose-200",
-  implementation: "bg-amber-100 text-amber-800 hover:bg-amber-200",
-  testing: "bg-purple-100 text-purple-800 hover:bg-purple-200",
-  completed: "bg-emerald-100 text-emerald-800 hover:bg-emerald-200",
-};
 
 export interface TaskDetailPanelProps {
   detail: TaskDetail | null;
@@ -121,7 +85,7 @@ function StatusDropdown({
   onUpdate(s: TaskStatus): void;
   status: TaskStatus;
 }) {
-  const current = TASK_STATUSES.find((s) => s.value === status);
+  const current = getTaskStatusMeta(status);
 
   const isStatusLockedByQuestions = (nextStatus: TaskStatus) =>
     hasOpenQuestions && nextStatus !== status && nextStatus !== "requires_clarification";
@@ -132,24 +96,24 @@ function StatusDropdown({
         <button
           type="button"
           disabled={disabled}
-          className={`inline-flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm transition hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-50 ${STATUS_TEXT_COLORS[status]}`}
+          className={`inline-flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm transition hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-50 ${current.textClass}`}
         >
           <span className="flex items-center gap-2">
-            <span className={`size-2 rounded-full ${STATUS_DOT_COLORS[status]}`} />
-            {current?.label}
+            <span className={`size-2 rounded-full ${current.dotClass}`} />
+            {current.label}
           </span>
           <ChevronDown className="size-3.5 text-slate-400" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[--radix-dropdown-menu-trigger-width] bg-white p-1.5 shadow-lg">
-        {TASK_STATUSES.map((s) => (
+        {TASK_STATUS_LIST.map((s) => (
           <DropdownMenuItem
             key={s.value}
             disabled={isStatusLockedByQuestions(s.value)}
             onClick={() => onUpdate(s.value)}
-            className={`mb-1 rounded-lg px-3 py-2 text-sm font-medium last:mb-0 ${STATUS_BADGE_CLASSES[s.value]}`}
+            className={`mb-1 rounded-lg px-3 py-2 text-sm font-medium last:mb-0 ${s.badgeClass} hover:bg-opacity-80`}
           >
-            <span className={`size-2 rounded-full ${STATUS_DOT_COLORS[s.value]}`} />
+            <span className={`size-2 rounded-full ${s.dotClass}`} />
             {s.label}
           </DropdownMenuItem>
         ))}

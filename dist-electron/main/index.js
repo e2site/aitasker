@@ -1074,12 +1074,12 @@ var savePlanInputSchema = z.object({
 });
 var appendPlanExtensionInputSchema = z.object({
   taskId: z.string(),
-  content: z.string().trim().min(1).max(4e3),
+  content: z.string().trim().min(1),
   author: planDiscussionAuthorSchema.default("human")
 });
 var appendPlanImprovementInputSchema = z.object({
   taskId: z.string(),
-  content: z.string().trim().min(1).max(4e3),
+  content: z.string().trim().min(1),
   author: planDiscussionAuthorSchema.default("human")
 });
 var consolidatePlanDiscussionInputSchema = z.object({
@@ -2185,17 +2185,146 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 // src/main/mcp/create-mcp-server.ts
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z as z2 } from "zod";
-function textContent(text2) {
-  return [{ type: "text", text: text2 }];
+
+// src/main/mcp/mcp-response-presenters.ts
+function renderPlanContent(contentMd) {
+  return parseManagedPlanContent(contentMd).renderedContentMd;
 }
-function ensureStructuredPlan(plan, taskId) {
+function serializeProjectSummary(project) {
+  return {
+    id: project.id,
+    isProfileComplete: project.isProfileComplete,
+    name: project.name
+  };
+}
+function serializeActiveProject(project) {
+  return {
+    description: project.description,
+    id: project.id,
+    isProfileComplete: project.isProfileComplete,
+    languages: project.languages,
+    name: project.name,
+    rootPath: project.rootPath,
+    skillFilePath: project.skillFilePath
+  };
+}
+function serializeProjectCollection(projects, activeProjectId) {
+  return {
+    activeProjectId,
+    projects: projects.map(serializeProjectSummary)
+  };
+}
+function serializeActivatedProject(project) {
+  return {
+    activeProjectId: project.id,
+    project: serializeProjectSummary(project)
+  };
+}
+function serializeTask(task) {
+  return {
+    description: task.description,
+    id: task.id,
+    projectId: task.projectId,
+    projectName: task.projectName,
+    status: task.status,
+    title: task.title
+  };
+}
+function serializeLinkedTask(link) {
+  return {
+    comment: link.comment,
+    direction: link.direction,
+    projectName: link.projectName,
+    status: link.status,
+    taskId: link.taskId,
+    title: link.title
+  };
+}
+function serializeLinkedResource(link) {
+  return {
+    comment: link.comment,
+    name: link.name,
+    resourceId: link.resourceId
+  };
+}
+function serializePlanSummary(plan, taskId) {
   if (!plan) {
-    return { taskId, exists: false, contentMd: "" };
+    return {
+      exists: false,
+      taskId
+    };
   }
   return {
-    ...plan,
-    contentMd: parseManagedPlanContent(plan.contentMd).renderedContentMd
+    exists: true,
+    source: plan.source,
+    taskId
   };
+}
+function serializePlan(plan, taskId) {
+  if (!plan) {
+    return {
+      contentMd: "",
+      exists: false,
+      taskId
+    };
+  }
+  return {
+    contentMd: renderPlanContent(plan.contentMd),
+    exists: true,
+    source: plan.source,
+    taskId
+  };
+}
+function serializeTaskDetail(detail) {
+  return {
+    linkedResources: detail.linkedResources.map(serializeLinkedResource),
+    linkedTasks: detail.linkedTasks.map(serializeLinkedTask),
+    plan: serializePlanSummary(detail.plan, detail.task.id),
+    project: serializeProjectSummary(detail.project),
+    task: serializeTask(detail.task)
+  };
+}
+function serializeTaskCollection(tasks, project) {
+  return {
+    project: project ? serializeProjectSummary(project) : null,
+    tasks: tasks.map(serializeTask)
+  };
+}
+function serializePlanComment(comment) {
+  return {
+    author: comment.author,
+    content: comment.content,
+    id: comment.id
+  };
+}
+function serializePlanExtension(taskId, extension) {
+  return {
+    extension: serializePlanComment(extension),
+    taskId
+  };
+}
+function serializePlanImprovement(taskId, improvement) {
+  return {
+    improvement: serializePlanComment(improvement),
+    taskId
+  };
+}
+function serializeResource(resource) {
+  return {
+    contentMd: resource.contentMd,
+    id: resource.id,
+    name: resource.name
+  };
+}
+function serializeResourceCollection(resources) {
+  return {
+    resources: resources.map(serializeResource)
+  };
+}
+
+// src/main/mcp/create-mcp-server.ts
+function textContent(text2) {
+  return [{ type: "text", text: text2 }];
 }
 function findProjectsByQuery(projects, query, limit) {
   const normalizedQuery = query.trim().toLocaleLowerCase("ru-RU");
@@ -2303,7 +2432,7 @@ function createMcpServer(appService, logger) {
       const project = await appService.createProject({ name });
       return {
         content: textContent(`\u041F\u0440\u043E\u0435\u043A\u0442 ${project.name} \u0433\u043E\u0442\u043E\u0432. ${getProjectProfileHint(project)}`),
-        structuredContent: project
+        structuredContent: serializeActiveProject(project)
       };
     }
   );
@@ -2315,9 +2444,10 @@ function createMcpServer(appService, logger) {
     async () => {
       logger.debug("mcp", "Tool list_projects called");
       const projects = await appService.listProjects();
+      const response = serializeProjectCollection(projects, activeProjectId);
       return {
-        content: textContent(JSON.stringify(projects, null, 2)),
-        structuredContent: { projects, activeProjectId }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -2334,9 +2464,10 @@ function createMcpServer(appService, logger) {
       logger.debug("mcp", "Tool find_projects called", { query, limit: limit ?? 5 });
       const projects = await appService.listProjects();
       const matches = findProjectsByQuery(projects, query, limit ?? 5);
+      const response = serializeProjectCollection(matches, activeProjectId);
       return {
-        content: textContent(JSON.stringify(matches, null, 2)),
-        structuredContent: { projects: matches, activeProjectId }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -2362,8 +2493,8 @@ function createMcpServer(appService, logger) {
       }
       activeProjectId = resolved.project.id;
       return {
-        content: textContent(`\u0410\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D \u043F\u0440\u043E\u0435\u043A\u0442 ${resolved.project.name}. ${getProjectProfileHint(resolved.project)}`),
-        structuredContent: resolved.project
+        content: textContent("\u041F\u0440\u043E\u0435\u043A\u0442 \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D."),
+        structuredContent: serializeActivatedProject(resolved.project)
       };
     }
   );
@@ -2375,9 +2506,10 @@ function createMcpServer(appService, logger) {
     async () => {
       logger.debug("mcp", "Tool get_active_project called");
       const project = await requireActiveProject();
+      const response = serializeActiveProject(project);
       return {
-        content: textContent(JSON.stringify(project, null, 2)),
-        structuredContent: project
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -2403,7 +2535,7 @@ function createMcpServer(appService, logger) {
       });
       return {
         content: textContent(`\u041A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 ${updated.name} \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430.`),
-        structuredContent: updated
+        structuredContent: serializeActiveProject(updated)
       };
     }
   );
@@ -2422,7 +2554,7 @@ function createMcpServer(appService, logger) {
       const detail = await appService.createTask({ title, description, projectId: project.id });
       return {
         content: textContent(`\u0417\u0430\u0434\u0430\u0447\u0430 ${detail.task.id} \u0441\u043E\u0437\u0434\u0430\u043D\u0430 \u0432 \u043F\u0440\u043E\u0435\u043A\u0442\u0435 ${project.name} \u0441\u043E \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u043C new.`),
-        structuredContent: detail
+        structuredContent: serializeTaskDetail(detail)
       };
     }
   );
@@ -2435,9 +2567,10 @@ function createMcpServer(appService, logger) {
       const project = await requirePreparedProject();
       logger.debug("mcp", "Tool list_tasks called", { projectId: project.id });
       const tasks = await appService.listTasks(project.id);
+      const response = serializeTaskCollection(tasks, project);
       return {
-        content: textContent(JSON.stringify(tasks, null, 2)),
-        structuredContent: { project, tasks }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -2459,9 +2592,10 @@ function createMcpServer(appService, logger) {
       });
       const tasks = await appService.listTasks(project.id);
       const matches = findTasksByQuery(tasks, query, limit ?? 5);
+      const response = serializeTaskCollection(matches, project);
       return {
-        content: textContent(JSON.stringify(matches, null, 2)),
-        structuredContent: { project, tasks: matches }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -2476,9 +2610,10 @@ function createMcpServer(appService, logger) {
     async ({ taskId }) => {
       logger.debug("mcp", "Tool get_task called", { taskId });
       const detail = await appService.getTaskDetail(taskId);
+      const response = serializeTaskDetail(detail);
       return {
-        content: textContent(JSON.stringify(detail, null, 2)),
-        structuredContent: detail
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -2497,7 +2632,7 @@ function createMcpServer(appService, logger) {
       const detail = await appService.updateTaskStatus({ taskId, status });
       return {
         content: textContent(`\u0421\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u0434\u0430\u0447\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D \u043D\u0430 ${status}.`),
-        structuredContent: detail
+        structuredContent: serializeTaskDetail(detail)
       };
     }
   );
@@ -2514,7 +2649,7 @@ function createMcpServer(appService, logger) {
       const { detail } = await getScopedTaskDetail(taskId);
       return {
         content: textContent(detail.plan ? parseManagedPlanContent(detail.plan.contentMd).renderedContentMd : ""),
-        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+        structuredContent: serializePlan(detail.plan, taskId)
       };
     }
   );
@@ -2539,10 +2674,7 @@ function createMcpServer(appService, logger) {
       }
       return {
         content: textContent(extension.content),
-        structuredContent: {
-          extension,
-          taskId
-        }
+        structuredContent: serializePlanExtension(taskId, extension)
       };
     }
   );
@@ -2567,10 +2699,7 @@ function createMcpServer(appService, logger) {
       }
       return {
         content: textContent(improvement.content),
-        structuredContent: {
-          improvement,
-          taskId
-        }
+        structuredContent: serializePlanImprovement(taskId, improvement)
       };
     }
   );
@@ -2600,7 +2729,7 @@ function createMcpServer(appService, logger) {
       });
       return {
         content: textContent("\u041F\u043B\u0430\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D."),
-        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+        structuredContent: serializePlan(detail.plan, taskId)
       };
     }
   );
@@ -2619,7 +2748,7 @@ function createMcpServer(appService, logger) {
       const detail = await appService.appendPlanExtension({ taskId, content, author: "agent" });
       return {
         content: textContent("\u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u043F\u043B\u0430\u043D\u0430 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E."),
-        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+        structuredContent: serializePlan(detail.plan, taskId)
       };
     }
   );
@@ -2638,7 +2767,7 @@ function createMcpServer(appService, logger) {
       const detail = await appService.appendPlanImprovement({ taskId, content, author: "agent" });
       return {
         content: textContent("\u0414\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430 \u043F\u043B\u0430\u043D\u0430 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0430."),
-        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+        structuredContent: serializePlan(detail.plan, taskId)
       };
     }
   );
@@ -2668,7 +2797,7 @@ function createMcpServer(appService, logger) {
       });
       return {
         content: textContent("\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430 \u043F\u043E \u043F\u043B\u0430\u043D\u0443 \u0441\u0436\u0430\u0442\u0430 \u0432 \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043F\u043B\u0430\u043D \u0438 \u043E\u0447\u0438\u0449\u0435\u043D\u0430 \u0438\u0437 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0445 \u0431\u043B\u043E\u043A\u043E\u0432."),
-        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+        structuredContent: serializePlan(detail.plan, taskId)
       };
     }
   );
@@ -2686,7 +2815,7 @@ function createMcpServer(appService, logger) {
       const resource = await appService.createResource({ name, contentMd });
       return {
         content: textContent(`\u0420\u0435\u0441\u0443\u0440\u0441 "${resource.name}" \u0441\u043E\u0437\u0434\u0430\u043D \u0441 id ${resource.id}.`),
-        structuredContent: resource
+        structuredContent: serializeResource(resource)
       };
     }
   );
@@ -2701,9 +2830,10 @@ function createMcpServer(appService, logger) {
     async ({ id }) => {
       logger.debug("mcp", "Tool get_resource called", { id });
       const resource = await appService.getResource(id);
+      const response = serializeResource(resource);
       return {
-        content: textContent(JSON.stringify(resource, null, 2)),
-        structuredContent: resource
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -2715,9 +2845,10 @@ function createMcpServer(appService, logger) {
     async () => {
       logger.debug("mcp", "Tool list_resources called");
       const resources = await appService.listResources();
+      const response = serializeResourceCollection(resources);
       return {
-        content: textContent(JSON.stringify(resources, null, 2)),
-        structuredContent: { resources }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -2736,7 +2867,7 @@ function createMcpServer(appService, logger) {
       const resource = await appService.updateResource({ id, name, contentMd });
       return {
         content: textContent(`\u0420\u0435\u0441\u0443\u0440\u0441 "${resource.name}" \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D.`),
-        structuredContent: resource
+        structuredContent: serializeResource(resource)
       };
     }
   );
@@ -2756,9 +2887,10 @@ function createMcpServer(appService, logger) {
       const matches = resources.filter(
         (r) => [r.id, r.name, r.contentMd].join(" ").toLocaleLowerCase("ru-RU").includes(normalizedQuery)
       ).slice(0, limit ?? 5);
+      const response = serializeResourceCollection(matches);
       return {
-        content: textContent(JSON.stringify(matches, null, 2)),
-        structuredContent: { resources: matches }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -2778,72 +2910,23 @@ function createMcpServer(appService, logger) {
           role: "user",
           content: {
             type: "text",
-            text: `\u0422\u044B \u043F\u043B\u0430\u043D\u0438\u0440\u0443\u0435\u0448\u044C \u0437\u0430\u0434\u0430\u0447\u0443, \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043D\u0443\u044E \u0432 AITasker.
+            text: `\u0412\u044B\u043F\u043E\u043B\u043D\u0438 planning \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 AITasker \u0447\u0435\u0440\u0435\u0437 MCP.
 
-\u041F\u0440\u043E\u0435\u043A\u0442 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F: ${projectRef}
-\u0421\u0441\u044B\u043B\u043A\u0430 \u043D\u0430 \u0437\u0430\u0434\u0430\u0447\u0443 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F: ${taskRef}
-\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${instructions?.trim() || "none"}
+\u0412\u0445\u043E\u0434:
+{
+  "mcp": "aitasker",
+  "action": "plan_task",
+  "projectRef": "${projectRef}",
+  "taskRef": "${taskRef}",
+  "read": ["get_active_project", "get_task", "get_plan"],
+  "write": ["save_plan", "update_task_status"],
+  "statusFlow": ["planning", "implementation"],
+  "rules": ["resolve_project", "resolve_task", "save_open_questions_separately"]
+}
 
-\u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B\u0439 workflow:
-1. \u0420\u0430\u0437\u0440\u0435\u0448\u0438 \u043F\u0440\u043E\u0435\u043A\u0442 \u0438 \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u0435\u0433\u043E.
-\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0437\u043E\u0432\u0438 activate_project \u0441 projectRef.
-\u0415\u0441\u043B\u0438 \u043F\u0440\u043E\u0435\u043A\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 find_projects.
-\u0415\u0441\u043B\u0438 \u0441\u043E\u0432\u043F\u0430\u0434\u0435\u043D\u0438\u0439 \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E, \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0441\u044C \u0438 \u043F\u043E\u043F\u0440\u043E\u0441\u0438 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F \u0443\u0442\u043E\u0447\u043D\u0438\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442.
+\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${instructions?.trim() || "none"}
 
-2. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443 \u043F\u0440\u043E\u0435\u043A\u0442\u0430.
-\u0421\u0440\u0430\u0437\u0443 \u043F\u043E\u0441\u043B\u0435 \u0430\u043A\u0442\u0438\u0432\u0430\u0446\u0438\u0438 \u0432\u044B\u0437\u043E\u0432\u0438 get_active_project.
-\u0415\u0441\u043B\u0438 description, rootPath \u0438\u043B\u0438 languages \u043F\u0443\u0441\u0442\u044B\u0435, \u0437\u0430\u043F\u043E\u043B\u043D\u0438 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443 \u0447\u0435\u0440\u0435\u0437 update_project_profile.
-\u041F\u044B\u0442\u0430\u0439\u0441\u044F \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u044C:
-- \u0442\u043E\u0447\u043D\u043E\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430
-- \u043A\u0440\u0430\u0442\u043A\u043E\u0435 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435
-- \u043F\u0443\u0442\u044C \u043A \u0440\u0430\u0431\u043E\u0447\u0435\u0439 \u0434\u0438\u0440\u0435\u043A\u0442\u043E\u0440\u0438\u0438
-- \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u043C\u044B\u0435 \u044F\u0437\u044B\u043A\u0438
-
-3. \u0420\u0430\u0437\u0440\u0435\u0448\u0438 \u0437\u0430\u0434\u0430\u0447\u0443 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.
-\u0415\u0441\u043B\u0438 taskRef \u043D\u0435 \u044F\u0432\u043B\u044F\u0435\u0442\u0441\u044F \u0442\u043E\u0447\u043D\u044B\u043C task id, \u0432\u044B\u0437\u043E\u0432\u0438 find_tasks.
-\u0415\u0441\u043B\u0438 \u0441\u043E\u0432\u043F\u0430\u0434\u0435\u043D\u0438\u0439 \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E, \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0441\u044C \u0438 \u043F\u043E\u043F\u0440\u043E\u0441\u0438 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F \u0443\u0442\u043E\u0447\u043D\u0438\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443.
-
-4. \u041F\u0435\u0440\u0435\u0432\u0435\u0434\u0438 \u0437\u0430\u0434\u0430\u0447\u0443 \u0432 \u0441\u0442\u0430\u0442\u0443\u0441 planning.
-\u041F\u043E\u0441\u043B\u0435 \u0442\u043E\u0433\u043E \u043A\u0430\u043A \u0437\u0430\u0434\u0430\u0447\u0430 \u0440\u0430\u0437\u0440\u0435\u0448\u0435\u043D\u0430, \u0432\u044B\u0437\u043E\u0432\u0438 update_task_status \u0441 status="planning".
-
-5. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0437\u0430\u0434\u0430\u0447\u0438.
-\u0412\u044B\u0437\u043E\u0432\u0438 get_task \u0441 \u0442\u043E\u0447\u043D\u044B\u043C task id.
-\u0415\u0441\u043B\u0438 \u0443 \u0437\u0430\u0434\u0430\u0447\u0438 \u0443\u0436\u0435 \u0435\u0441\u0442\u044C \u043F\u043B\u0430\u043D, \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F \u0438\u043B\u0438 \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0438, \u0442\u0430\u043A\u0436\u0435 \u0432\u044B\u0437\u043E\u0432\u0438 get_plan.
-
-6. \u041F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u044C Markdown \u0432 \u0444\u043E\u0440\u043C\u0430\u0442\u0435:
-
-# \u041F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438
-
-## \u0426\u0435\u043B\u044C
-...
-
-## \u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442
-...
-
-## \u0428\u0430\u0433\u0438
-1. ...
-2. ...
-3. ...
-
-## \u041A\u0440\u0438\u0442\u0435\u0440\u0438\u0438 \u0433\u043E\u0442\u043E\u0432\u043D\u043E\u0441\u0442\u0438
-- ...
-
-7. \u0415\u0441\u043B\u0438 \u0435\u0441\u0442\u044C \u043D\u0435\u0437\u0430\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B, \u0441\u043E\u0431\u0435\u0440\u0438 \u0438\u0445 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u0441\u043F\u0438\u0441\u043A\u043E\u043C \u0441\u0442\u0440\u043E\u043A. \u041D\u0435 \u0437\u0430\u043F\u0438\u0441\u044B\u0432\u0430\u0439 \u0438\u0445 \u0432 markdown-\u043F\u043B\u0430\u043D.
-
-8. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u0438\u0442\u043E\u0433\u043E\u0432\u044B\u0439 Markdown \u0447\u0435\u0440\u0435\u0437 save_plan \u0441 source="agent". \u0415\u0441\u043B\u0438 \u0435\u0441\u0442\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B, \u043F\u0435\u0440\u0435\u0434\u0430\u0439 \u0438\u0445 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u043F\u043E\u043B\u0435\u043C openQuestions.
-
-9. \u041F\u043E\u0441\u043B\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F \u043F\u0435\u0440\u0435\u0432\u0435\u0434\u0438 \u0437\u0430\u0434\u0430\u0447\u0443 \u0432 \u0441\u0442\u0430\u0442\u0443\u0441 testing \u0447\u0435\u0440\u0435\u0437 update_task_status.
-
-10. \u041F\u043E\u0441\u043B\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F \u043E\u0442\u0432\u0435\u0442\u044C \u043A\u0440\u0430\u0442\u043A\u043E:
-- \u043A\u0430\u043A\u043E\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0431\u044B\u043B \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D
-- \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0431\u044B\u043B\u0430 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u0430 \u0438\u043B\u0438 \u0443\u0436\u0435 \u0431\u044B\u043B\u0430 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u0430
-- \u043A\u0430\u043A\u0430\u044F \u0437\u0430\u0434\u0430\u0447\u0430 \u0431\u044B\u043B\u0430 \u0440\u0430\u0441\u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0430
-- \u043A\u0430\u043A\u043E\u0439 \u0441\u0442\u0430\u0442\u0443\u0441 \u0431\u044B\u043B \u0432\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D \u043F\u043E\u0441\u043B\u0435 \u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u044F
-- \u043F\u043B\u0430\u043D \u0431\u044B\u043B \u0441\u043E\u0437\u0434\u0430\u043D \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D
-- \u0431\u044B\u043B\u0438 \u043B\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u043E
-- \u043A\u043E\u0440\u043E\u0442\u043A\u0430\u044F \u0441\u0432\u043E\u0434\u043A\u0430 \u043F\u043B\u0430\u043D\u0430
-
-\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043F\u043E\u0441\u043B\u0435 \u0430\u043D\u0430\u043B\u0438\u0437\u0430. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 Markdown \u043E\u0431\u0440\u0430\u0442\u043D\u043E \u0432 AITasker \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`
+\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442 \u0432 AITasker \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`
           }
         }
       ]
@@ -2865,28 +2948,22 @@ function createMcpServer(appService, logger) {
           role: "user",
           content: {
             type: "text",
-            text: `\u0422\u044B \u0441\u0436\u0438\u043C\u0430\u0435\u0448\u044C \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443 \u043F\u043E \u0437\u0430\u0434\u0430\u0447\u0435, \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043D\u043E\u0439 \u0432 AITasker, \u043E\u0431\u0440\u0430\u0442\u043D\u043E \u0432 \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0439 \u043F\u043B\u0430\u043D.
+            text: `\u0421\u043E\u0436\u043C\u0438 \u043E\u0431\u0441\u0443\u0436\u0434\u0435\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 AITasker \u043E\u0431\u0440\u0430\u0442\u043D\u043E \u0432 \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0439 \u043F\u043B\u0430\u043D \u0447\u0435\u0440\u0435\u0437 MCP.
 
-\u041F\u0440\u043E\u0435\u043A\u0442 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F: ${projectRef}
-\u0421\u0441\u044B\u043B\u043A\u0430 \u043D\u0430 \u0437\u0430\u0434\u0430\u0447\u0443 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F: ${taskRef}
-\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${instructions?.trim() || "none"}
+\u0412\u0445\u043E\u0434:
+{
+  "mcp": "aitasker",
+  "action": "consolidate_plan_discussion",
+  "projectRef": "${projectRef}",
+  "taskRef": "${taskRef}",
+  "read": ["get_task", "get_plan"],
+  "write": ["consolidate_plan_discussion"],
+  "rules": ["resolve_project", "resolve_task", "merge_discussion_into_plan", "save_open_questions_separately"]
+}
 
-\u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B\u0439 workflow:
-1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project. \u0415\u0441\u043B\u0438 \u043F\u0440\u043E\u0435\u043A\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 find_projects.
-2. \u0421\u0440\u0430\u0437\u0443 \u0432\u044B\u0437\u043E\u0432\u0438 get_active_project \u0438 \u0443\u0431\u0435\u0434\u0438\u0441\u044C, \u0447\u0442\u043E \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u0430.
-3. \u0420\u0430\u0437\u0440\u0435\u0448\u0438 \u0437\u0430\u0434\u0430\u0447\u0443 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430. \u0415\u0441\u043B\u0438 taskRef \u043D\u0435 \u044F\u0432\u043B\u044F\u0435\u0442\u0441\u044F \u0442\u043E\u0447\u043D\u044B\u043C task id, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 find_tasks.
-4. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u0437\u0430\u0434\u0430\u0447\u0443 \u0447\u0435\u0440\u0435\u0437 get_task, \u0437\u0430\u0442\u0435\u043C \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E \u0432\u044B\u0437\u043E\u0432\u0438 get_plan.
-5. \u041D\u0430 \u043E\u0441\u043D\u043E\u0432\u0435 \u0442\u0435\u043A\u0443\u0449\u0435\u0433\u043E \u043F\u043B\u0430\u043D\u0430, \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0445 \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u0438 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438 \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u044C \u043D\u043E\u0432\u044B\u0439 \u0446\u0435\u043B\u044C\u043D\u044B\u0439 Markdown-\u043F\u043B\u0430\u043D \u0431\u0435\u0437 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0445 discussion-\u0431\u043B\u043E\u043A\u043E\u0432.
-6. \u0415\u0441\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 \u0441\u0436\u0430\u0442\u0438\u044F \u043E\u0441\u0442\u0430\u044E\u0442\u0441\u044F \u043D\u0435\u0437\u0430\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B, \u0441\u043E\u0431\u0435\u0440\u0438 \u0438\u0445 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u0441\u043F\u0438\u0441\u043A\u043E\u043C \u0441\u0442\u0440\u043E\u043A. \u041D\u0435 \u0437\u0430\u043F\u0438\u0441\u044B\u0432\u0430\u0439 \u0438\u0445 \u0432 markdown-\u043F\u043B\u0430\u043D.
-7. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0447\u0435\u0440\u0435\u0437 consolidate_plan_discussion \u0441 source="agent". \u0415\u0441\u043B\u0438 \u043E\u0441\u0442\u0430\u044E\u0442\u0441\u044F \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B, \u043F\u0435\u0440\u0435\u0434\u0430\u0439 \u0438\u0445 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u043F\u043E\u043B\u0435\u043C openQuestions.
-8. \u041F\u043E\u0441\u043B\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F \u043E\u0442\u0432\u0435\u0442\u044C \u043A\u0440\u0430\u0442\u043A\u043E:
-- \u043A\u0430\u043A\u043E\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0431\u044B\u043B \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D
-- \u043A\u0430\u043A\u0430\u044F \u0437\u0430\u0434\u0430\u0447\u0430 \u0431\u044B\u043B\u0430 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430
-- \u043A\u0430\u043A\u0438\u0435 \u043A\u043B\u044E\u0447\u0435\u0432\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u043F\u043E\u043F\u0430\u043B\u0438 \u0432 \u043D\u043E\u0432\u044B\u0439 \u043F\u043B\u0430\u043D
-- \u043E\u0441\u0442\u0430\u043B\u0438\u0441\u044C \u043B\u0438 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0435 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B \u043F\u043E\u0441\u043B\u0435 \u0441\u0436\u0430\u0442\u0438\u044F
-- \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435, \u0447\u0442\u043E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F \u0438 \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0438 \u0431\u044B\u043B\u0438 \u043E\u0447\u0438\u0449\u0435\u043D\u044B \u0438\u0437 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0445 \u0431\u043B\u043E\u043A\u043E\u0432
+\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${instructions?.trim() || "none"}
 
-\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E \u0432\u044B\u0437\u043E\u0432\u0438 consolidate_plan_discussion \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`
+\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`
           }
         }
       ]
@@ -2908,40 +2985,22 @@ function createMcpServer(appService, logger) {
           role: "user",
           content: {
             type: "text",
-            text: `\u0422\u044B \u043F\u043E\u0434\u0433\u043E\u0442\u0430\u0432\u043B\u0438\u0432\u0430\u0435\u0448\u044C SKILL.md \u0434\u043B\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0432 AITasker.
+            text: `\u041F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u044C \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u0438 SKILL.md \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0432 AITasker.
 
-\u041F\u0440\u043E\u0435\u043A\u0442 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F: ${projectRef}
-\u041F\u0443\u0442\u044C \u043A skill-\u0444\u0430\u0439\u043B\u0443 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430: ${skillPath?.trim() || "not provided"}
-\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${instructions?.trim() || "none"}
+\u0412\u0445\u043E\u0434:
+{
+  "mcp": "aitasker",
+  "action": "sync_project_skill",
+  "projectRef": "${projectRef}",
+  "skillPath": "${skillPath?.trim() || ""}",
+  "read": ["get_active_project"],
+  "write": ["update_project_profile"],
+  "rules": ["resolve_project", "determine_skill_path", "create_or_update_skill_file", "sync_skill_path_to_project_profile"]
+}
 
-\u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B\u0439 workflow:
-1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project.
-\u0415\u0441\u043B\u0438 \u043F\u0440\u043E\u0435\u043A\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 find_projects.
+\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${instructions?.trim() || "none"}
 
-2. \u0421\u0440\u0430\u0437\u0443 \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0447\u0435\u0440\u0435\u0437 get_active_project.
-\u0415\u0441\u043B\u0438 description, rootPath \u0438\u043B\u0438 languages \u043F\u0443\u0441\u0442\u044B\u0435, \u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0437\u0430\u043F\u043E\u043B\u043D\u0438 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443 \u0447\u0435\u0440\u0435\u0437 update_project_profile.
-
-3. \u041E\u043F\u0440\u0435\u0434\u0435\u043B\u0438 \u043F\u0443\u0442\u044C \u043A skill-\u0444\u0430\u0439\u043B\u0443.
-\u041F\u0440\u0438\u043E\u0440\u0438\u0442\u0435\u0442:
-- \u043F\u0443\u0442\u044C \u0438\u0437 skillPath
-- skillFilePath \u0438\u0437 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438 \u043F\u0440\u043E\u0435\u043A\u0442\u0430
-- <rootPath>/SKILL.md
-\u0415\u0441\u043B\u0438 rootPath \u043E\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u0438 \u043F\u0443\u0442\u044C \u043D\u0435\u043B\u044C\u0437\u044F \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u044C \u043D\u0430\u0434\u0435\u0436\u043D\u043E, \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0441\u044C \u0438 \u043F\u043E\u043F\u0440\u043E\u0441\u0438 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F \u0443\u043A\u0430\u0437\u0430\u0442\u044C \u043F\u0443\u0442\u044C.
-
-4. \u0421\u043E\u0437\u0434\u0430\u0439 \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u0438 SKILL.md \u043D\u0430 \u0434\u0438\u0441\u043A\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u0432\u043E\u0438\u043C\u0438 \u0444\u0430\u0439\u043B\u043E\u0432\u044B\u043C\u0438 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u0430\u043C\u0438.
-\u0424\u0430\u0439\u043B \u0434\u043E\u043B\u0436\u0435\u043D \u043F\u043E\u043C\u043E\u0433\u0430\u0442\u044C \u0432\u044B\u043F\u043E\u043B\u043D\u044F\u0442\u044C \u0442\u0438\u043F\u043E\u0432\u044B\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u043F\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0443: workflow, \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0438\u044F, \u0441\u043E\u0433\u043B\u0430\u0448\u0435\u043D\u0438\u044F \u043F\u043E \u043A\u043E\u0434\u0443, \u0432\u0430\u0436\u043D\u044B\u0435 \u043A\u043E\u043C\u0430\u043D\u0434\u044B, \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0430 \u0438 \u043F\u0440\u0430\u0432\u0438\u043B\u0430.
-
-5. \u041F\u043E\u0441\u043B\u0435 \u0437\u0430\u043F\u0438\u0441\u0438 \u0444\u0430\u0439\u043B\u0430 \u0432\u044B\u0437\u043E\u0432\u0438 update_project_profile \u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438:
-- skillFilePath
-- \u043F\u0440\u0438 \u043D\u0435\u043E\u0431\u0445\u043E\u0434\u0438\u043C\u043E\u0441\u0442\u0438 skillPrompt
-- \u0443\u0442\u043E\u0447\u043D\u0435\u043D\u043D\u044B\u0435 description/rootPath/languages, \u0435\u0441\u043B\u0438 \u0432 \u0445\u043E\u0434\u0435 \u0430\u043D\u0430\u043B\u0438\u0437\u0430 \u043D\u0430\u0448\u043B\u0438\u0441\u044C \u0431\u043E\u043B\u0435\u0435 \u0442\u043E\u0447\u043D\u044B\u0435 \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u044F
-
-6. \u041E\u0442\u0432\u0435\u0442\u044C \u043A\u0440\u0430\u0442\u043A\u043E:
-- \u043A\u0430\u043A\u043E\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D
-- \u0433\u0434\u0435 \u0441\u043E\u0437\u0434\u0430\u043D \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D SKILL.md
-- \u0447\u0442\u043E \u0438\u043C\u0435\u043D\u043D\u043E \u043E\u043F\u0438\u0441\u0430\u043D\u043E \u0432 skill-\u0444\u0430\u0439\u043B\u0435
-
-\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u043F\u043B\u0430\u043D\u0435. \u0415\u0441\u043B\u0438 \u0443 \u0442\u0435\u0431\u044F \u0435\u0441\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F \u043A \u0444\u0430\u0439\u043B\u043E\u0432\u044B\u043C \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u0430\u043C, \u0441\u043E\u0437\u0434\u0430\u0439 \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u0438 SKILL.md \u043F\u0435\u0440\u0435\u0434 \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u043C \u043E\u0442\u0432\u0435\u0442\u043E\u043C.`
+\u0415\u0441\u043B\u0438 \u043F\u0443\u0442\u044C \u043D\u0435\u043B\u044C\u0437\u044F \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u044C \u043D\u0430\u0434\u0435\u0436\u043D\u043E, \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0441\u044C \u0438 \u0437\u0430\u043F\u0440\u043E\u0441\u0438 \u0435\u0433\u043E \u0443 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F.`
           }
         }
       ]
@@ -2960,7 +3019,7 @@ function createMcpServer(appService, logger) {
           {
             uri: uri.href,
             mimeType: "application/json",
-            text: JSON.stringify(detail.task, null, 2)
+            text: JSON.stringify(serializeTask(detail.task), null, 2)
           }
         ]
       };

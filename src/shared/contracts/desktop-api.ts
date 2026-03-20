@@ -207,14 +207,14 @@ export type SavePlanInput = z.infer<typeof savePlanInputSchema>;
 
 export const appendPlanExtensionInputSchema = z.object({
   taskId: z.string(),
-  content: z.string().trim().min(1).max(4_000),
+  content: z.string().trim().min(1),
   author: planDiscussionAuthorSchema.default("human")
 });
 export type AppendPlanExtensionInput = z.infer<typeof appendPlanExtensionInputSchema>;
 
 export const appendPlanImprovementInputSchema = z.object({
   taskId: z.string(),
-  content: z.string().trim().min(1).max(4_000),
+  content: z.string().trim().min(1),
   author: planDiscussionAuthorSchema.default("human")
 });
 export type AppendPlanImprovementInput = z.infer<typeof appendPlanImprovementInputSchema>;

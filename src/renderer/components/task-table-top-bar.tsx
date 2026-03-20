@@ -22,31 +22,14 @@ import { TaskCreateForm } from "@/renderer/components/task-create-form";
 import { cn } from "@/renderer/components/ui/class-names";
 import { Button } from "@/renderer/components/ui/button";
 import { usePromptOverridesQuery } from "@/renderer/features/prompts/use-prompt-override-queries";
-import { getPromptVars, resolvePrompt } from "@/renderer/components/mcp-prompt-presets";
+import { getProjectPromptVars, resolvePrompt } from "@/renderer/components/mcp-prompt-presets";
+import { TASK_STATUS_LIST, getTaskStatusMeta } from "@/renderer/features/tasks/task-status-meta";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/renderer/components/ui/dropdown-menu";
-
-const STATUS_FILTERS: { status: TaskStatus; label: string }[] = [
-  { status: "new", label: "Новые" },
-  { status: "planning", label: "Планирование" },
-  { status: "requires_clarification", label: "Уточнение" },
-  { status: "implementation", label: "Реализация" },
-  { status: "testing", label: "Тестирование" },
-  { status: "completed", label: "Выполнено" }
-];
-
-const STATUS_PILL_CLASSES: Record<TaskStatus, string> = {
-  new: "bg-slate-100 text-slate-700 ring-slate-300",
-  planning: "bg-sky-100 text-sky-800 ring-sky-300",
-  requires_clarification: "bg-rose-100 text-rose-800 ring-rose-300",
-  implementation: "bg-amber-100 text-amber-800 ring-amber-300",
-  testing: "bg-purple-100 text-purple-800 ring-purple-300",
-  completed: "bg-emerald-100 text-emerald-800 ring-emerald-300"
-};
 
 export interface TaskTableTopBarProps {
   allTasks: TaskRecord[];
@@ -104,15 +87,16 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
   }
 
   function handleCopyAgentPrompt() {
-    const projectName = selectedProject?.name ?? "<укажи проект>";
-    const projectPath = selectedProject?.rootPath ?? "<укажи путь проекта>";
-    const vars = [
-      { name: "projectName", value: projectName, placeholder: "«Название проекта»" },
-      { name: "projectPath", value: projectPath, placeholder: "«Путь к проекту»" },
-      { name: "taskTitle", value: "", placeholder: "" },
-      { name: "taskId", value: "", placeholder: "" },
-      { name: "skillFilePath", value: "", placeholder: "" }
-    ];
+    const vars = selectedProject
+      ? getProjectPromptVars(selectedProject)
+      : [
+          { name: "projectId", value: "<укажи projectId>", placeholder: "project-id" },
+          { name: "projectName", value: "<укажи проект>", placeholder: "«Название проекта»" },
+          { name: "taskTitle", value: "", placeholder: "«Название задачи»" },
+          { name: "taskId", value: "", placeholder: "«ID задачи»" },
+          { name: "projectPath", value: "<укажи путь проекта>", placeholder: "«Путь к проекту»" },
+          { name: "skillFilePath", value: "<укажи путь к SKILL.md>", placeholder: "«Путь к SKILL.md»" }
+        ];
     const agentPrompt = resolvePrompt("agent-task-prompt", vars, overrides);
     copyPrompt(agentPrompt, "Промт скопирован", "Вставь его в агента и допиши задачу в конце");
   }
@@ -122,14 +106,7 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
       return;
     }
 
-    const fakeDetail = {
-      task: { projectName: selectedProject.name, title: "", id: "" },
-      project: {
-        rootPath: selectedProject.rootPath,
-        skillFilePath: selectedProject.skillFilePath
-      }
-    };
-    const vars = getPromptVars(fakeDetail as Parameters<typeof getPromptVars>[0]);
+    const vars = getProjectPromptVars(selectedProject);
     const skillPrompt = resolvePrompt("project-skill", vars, overrides);
 
     copyPrompt(
@@ -264,21 +241,22 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
 
         {/* Status pills */}
         <div className="flex flex-wrap gap-1.5">
-          {STATUS_FILTERS.map(({ status, label }) => {
-            const active = props.selectedStatuses.includes(status);
+          {TASK_STATUS_LIST.map(({ value, filterLabel }) => {
+            const active = props.selectedStatuses.includes(value);
+            const meta = getTaskStatusMeta(value);
             return (
               <button
-                key={status}
+                key={value}
                 type="button"
-                onClick={() => toggleStatus(status)}
+                onClick={() => toggleStatus(value)}
                 className={cn(
                   "rounded-full px-3 py-1 text-xs font-medium transition",
                   active
-                    ? cn(STATUS_PILL_CLASSES[status], "ring-1")
+                    ? cn(meta.badgeClass, "ring-1")
                     : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                 )}
               >
-                {label}
+                {filterLabel}
               </button>
             );
           })}

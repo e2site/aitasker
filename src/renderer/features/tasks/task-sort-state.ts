@@ -3,9 +3,9 @@
 Не входит: UI-компоненты, логика фильтрации и загрузка данных.
 */
 import { atomWithStorage } from "jotai/utils";
-import type { TaskStatus } from "@/shared/contracts/desktop-api";
+import { TASK_STATUS_SORT_ORDER } from "@/renderer/features/tasks/task-status-meta";
 
-export type SortField = "status" | "title" | "projectName" | "updatedAt";
+export type SortField = "status" | "title" | "projectName" | "createdAt" | "updatedAt";
 export type SortDirection = "asc" | "desc";
 
 export interface TaskSortState {
@@ -13,14 +13,7 @@ export interface TaskSortState {
   direction: SortDirection;
 }
 
-export const STATUS_ORDER: Record<TaskStatus, number> = {
-  new: 0,
-  planning: 1,
-  requires_clarification: 2,
-  implementation: 3,
-  testing: 4,
-  completed: 5
-};
+export const STATUS_ORDER = TASK_STATUS_SORT_ORDER;
 
 export const taskSortAtom = atomWithStorage<TaskSortState>("task-sort", {
   field: "updatedAt",

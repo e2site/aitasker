@@ -3,6 +3,7 @@
 Не входит: Отрисовка деталей задачи и редактирование плана.
 */
 import type { CreateTaskInput, ProjectRecord, TaskRecord, TaskStatus, UpdateProjectProfileInput } from "@/shared/contracts/desktop-api";
+import { TASK_STATUS_LIST } from "@/renderer/features/tasks/task-status-meta";
 import { ProjectCard } from "@/renderer/components/project-card";
 import { ProjectSwitcher } from "@/renderer/components/project-switcher";
 import { TaskCreateForm } from "@/renderer/components/task-create-form";
@@ -23,14 +24,6 @@ export interface TaskListSidebarProps {
   tasks: TaskRecord[];
 }
 
-const STATUS_GROUPS: { status: TaskStatus; label: string }[] = [
-  { status: "new", label: "Новые" },
-  { status: "planning", label: "Планирование" },
-  { status: "requires_clarification", label: "Требуют уточнений" },
-  { status: "implementation", label: "Реализация" },
-  { status: "completed", label: "Выполнено" }
-];
-
 function formatDate(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
@@ -39,9 +32,10 @@ function formatDate(iso: string) {
 export function TaskListSidebar(props: TaskListSidebarProps) {
   const projectSuggestions = props.projects.map((project) => project.name).sort((a, b) => a.localeCompare(b, "ru-RU"));
   const selectedProject = props.projects.find((project) => project.id === props.selectedProjectId) ?? null;
-  const grouped = STATUS_GROUPS.map((group) => ({
-    ...group,
-    tasks: props.tasks.filter((task) => task.status === group.status)
+  const grouped = TASK_STATUS_LIST.map((status) => ({
+    label: status.groupLabel,
+    status: status.value,
+    tasks: props.tasks.filter((task) => task.status === status.value)
   })).filter((group) => group.tasks.length > 0);
 
   return (

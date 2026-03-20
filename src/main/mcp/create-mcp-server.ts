@@ -5,6 +5,19 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { findManagedPlanComment, parseManagedPlanContent } from "../../shared/plans/managed-plan-content";
+import {
+  serializeActivatedProject,
+  serializeActiveProject,
+  serializePlan,
+  serializePlanExtension,
+  serializePlanImprovement,
+  serializeProjectCollection,
+  serializeResource,
+  serializeResourceCollection,
+  serializeTask,
+  serializeTaskCollection,
+  serializeTaskDetail
+} from "./mcp-response-presenters";
 import { normalizeProjectName } from "../db/project-repository";
 import type { AppService } from "../services/app-service";
 import type { DevLogger } from "../services/dev-logger";
@@ -14,20 +27,6 @@ type TaskRecord = Awaited<ReturnType<AppService["listTasks"]>>[number];
 
 function textContent(text: string) {
   return [{ type: "text" as const, text }];
-}
-
-function ensureStructuredPlan(
-  plan: Awaited<ReturnType<AppService["getTaskDetail"]>>["plan"],
-  taskId: string
-) {
-  if (!plan) {
-    return { taskId, exists: false, contentMd: "" };
-  }
-
-  return {
-    ...plan,
-    contentMd: parseManagedPlanContent(plan.contentMd).renderedContentMd
-  };
 }
 
 function findProjectsByQuery(projects: ProjectRecord[], query: string, limit: number) {
@@ -173,7 +172,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent(`Проект ${project.name} готов. ${getProjectProfileHint(project)}`),
-        structuredContent: project
+        structuredContent: serializeActiveProject(project)
       };
     }
   );
@@ -186,10 +185,11 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
     async () => {
       logger.debug("mcp", "Tool list_projects called");
       const projects = await appService.listProjects();
+      const response = serializeProjectCollection(projects, activeProjectId);
 
       return {
-        content: textContent(JSON.stringify(projects, null, 2)),
-        structuredContent: { projects, activeProjectId }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -207,10 +207,11 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       logger.debug("mcp", "Tool find_projects called", { query, limit: limit ?? 5 });
       const projects = await appService.listProjects();
       const matches = findProjectsByQuery(projects, query, limit ?? 5);
+      const response = serializeProjectCollection(matches, activeProjectId);
 
       return {
-        content: textContent(JSON.stringify(matches, null, 2)),
-        structuredContent: { projects: matches, activeProjectId }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -242,8 +243,8 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       activeProjectId = resolved.project.id;
 
       return {
-        content: textContent(`Активирован проект ${resolved.project.name}. ${getProjectProfileHint(resolved.project)}`),
-        structuredContent: resolved.project
+        content: textContent("Проект активирован."),
+        structuredContent: serializeActivatedProject(resolved.project)
       };
     }
   );
@@ -256,10 +257,11 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
     async () => {
       logger.debug("mcp", "Tool get_active_project called");
       const project = await requireActiveProject();
+      const response = serializeActiveProject(project);
 
       return {
-        content: textContent(JSON.stringify(project, null, 2)),
-        structuredContent: project
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -288,7 +290,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent(`Карточка проекта ${updated.name} обновлена.`),
-        structuredContent: updated
+        structuredContent: serializeActiveProject(updated)
       };
     }
   );
@@ -309,7 +311,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent(`Задача ${detail.task.id} создана в проекте ${project.name} со статусом new.`),
-        structuredContent: detail
+        structuredContent: serializeTaskDetail(detail)
       };
     }
   );
@@ -323,10 +325,11 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       const project = await requirePreparedProject();
       logger.debug("mcp", "Tool list_tasks called", { projectId: project.id });
       const tasks = await appService.listTasks(project.id);
+      const response = serializeTaskCollection(tasks, project);
 
       return {
-        content: textContent(JSON.stringify(tasks, null, 2)),
-        structuredContent: { project, tasks }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -350,10 +353,11 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       });
       const tasks = await appService.listTasks(project.id);
       const matches = findTasksByQuery(tasks, query, limit ?? 5);
+      const response = serializeTaskCollection(matches, project);
 
       return {
-        content: textContent(JSON.stringify(matches, null, 2)),
-        structuredContent: { project, tasks: matches }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -369,10 +373,11 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
     async ({ taskId }) => {
       logger.debug("mcp", "Tool get_task called", { taskId });
       const detail = await appService.getTaskDetail(taskId);
+      const response = serializeTaskDetail(detail);
 
       return {
-        content: textContent(JSON.stringify(detail, null, 2)),
-        structuredContent: detail
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -394,7 +399,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent(`Статус задачи обновлен на ${status}.`),
-        structuredContent: detail
+        structuredContent: serializeTaskDetail(detail)
       };
     }
   );
@@ -413,7 +418,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent(detail.plan ? parseManagedPlanContent(detail.plan.contentMd).renderedContentMd : ""),
-        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+        structuredContent: serializePlan(detail.plan, taskId)
       };
     }
   );
@@ -443,10 +448,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent(extension.content),
-        structuredContent: {
-          extension,
-          taskId
-        }
+        structuredContent: serializePlanExtension(taskId, extension)
       };
     }
   );
@@ -476,10 +478,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent(improvement.content),
-        structuredContent: {
-          improvement,
-          taskId
-        }
+        structuredContent: serializePlanImprovement(taskId, improvement)
       };
     }
   );
@@ -511,7 +510,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent("План сохранен."),
-        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+        structuredContent: serializePlan(detail.plan, taskId)
       };
     }
   );
@@ -532,7 +531,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent("Расширение плана добавлено."),
-        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+        structuredContent: serializePlan(detail.plan, taskId)
       };
     }
   );
@@ -553,7 +552,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent("Доработка плана добавлена."),
-        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+        structuredContent: serializePlan(detail.plan, taskId)
       };
     }
   );
@@ -586,7 +585,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent("Переписка по плану сжата в текущий план и очищена из отдельных блоков."),
-        structuredContent: ensureStructuredPlan(detail.plan, taskId)
+        structuredContent: serializePlan(detail.plan, taskId)
       };
     }
   );
@@ -606,7 +605,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent(`Ресурс "${resource.name}" создан с id ${resource.id}.`),
-        structuredContent: resource
+        structuredContent: serializeResource(resource)
       };
     }
   );
@@ -622,10 +621,11 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
     async ({ id }) => {
       logger.debug("mcp", "Tool get_resource called", { id });
       const resource = await appService.getResource(id);
+      const response = serializeResource(resource);
 
       return {
-        content: textContent(JSON.stringify(resource, null, 2)),
-        structuredContent: resource
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -638,10 +638,11 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
     async () => {
       logger.debug("mcp", "Tool list_resources called");
       const resources = await appService.listResources();
+      const response = serializeResourceCollection(resources);
 
       return {
-        content: textContent(JSON.stringify(resources, null, 2)),
-        structuredContent: { resources }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -662,7 +663,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
 
       return {
         content: textContent(`Ресурс "${resource.name}" обновлен.`),
-        structuredContent: resource
+        structuredContent: serializeResource(resource)
       };
     }
   );
@@ -688,10 +689,11 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
             .includes(normalizedQuery)
         )
         .slice(0, limit ?? 5);
+      const response = serializeResourceCollection(matches);
 
       return {
-        content: textContent(JSON.stringify(matches, null, 2)),
-        structuredContent: { resources: matches }
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -721,72 +723,23 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
           role: "user",
           content: {
             type: "text",
-            text: `Ты планируешь задачу, сохраненную в AITasker.
+            text: `Выполни planning задачи в AITasker через MCP.
 
-Проект из запроса пользователя: ${projectRef}
-Ссылка на задачу из запроса пользователя: ${taskRef}
-Дополнительные инструкции: ${instructions?.trim() || "none"}
+Вход:
+{
+  "mcp": "aitasker",
+  "action": "plan_task",
+  "projectRef": "${projectRef}",
+  "taskRef": "${taskRef}",
+  "read": ["get_active_project", "get_task", "get_plan"],
+  "write": ["save_plan", "update_task_status"],
+  "statusFlow": ["planning", "implementation"],
+  "rules": ["resolve_project", "resolve_task", "save_open_questions_separately"]
+}
 
-Обязательный workflow:
-1. Разреши проект и активируй его.
-Сначала вызови activate_project с projectRef.
-Если проект не найден, используй find_projects.
-Если совпадений несколько, остановись и попроси пользователя уточнить проект.
+Доп. инструкции: ${instructions?.trim() || "none"}
 
-2. Прочитай карточку проекта.
-Сразу после активации вызови get_active_project.
-Если description, rootPath или languages пустые, заполни карточку через update_project_profile.
-Пытайся определить:
-- точное название проекта
-- краткое описание
-- путь к рабочей директории
-- используемые языки
-
-3. Разреши задачу внутри активного проекта.
-Если taskRef не является точным task id, вызови find_tasks.
-Если совпадений несколько, остановись и попроси пользователя уточнить задачу.
-
-4. Переведи задачу в статус planning.
-После того как задача разрешена, вызови update_task_status с status="planning".
-
-5. Прочитай контекст задачи.
-Вызови get_task с точным task id.
-Если у задачи уже есть план, расширения или доработки, также вызови get_plan.
-
-6. Подготовь Markdown в формате:
-
-# План задачи
-
-## Цель
-...
-
-## Контекст
-...
-
-## Шаги
-1. ...
-2. ...
-3. ...
-
-## Критерии готовности
-- ...
-
-7. Если есть незакрытые вопросы, собери их отдельным списком строк. Не записывай их в markdown-план.
-
-8. Сохрани итоговый Markdown через save_plan с source="agent". Если есть открытые вопросы, передай их отдельным полем openQuestions.
-
-9. После сохранения переведи задачу в статус testing через update_task_status.
-
-10. После сохранения ответь кратко:
-- какой проект был активирован
-- карточка проекта была заполнена или уже была заполнена
-- какая задача была распланирована
-- какой статус был выставлен после планирования
-- план был создан или обновлен
-- были ли сохранены открытые вопросы отдельно
-- короткая сводка плана
-
-Не останавливайся после анализа. Сохрани Markdown обратно в AITasker до финального ответа.`
+Не останавливайся на анализе. Сохрани результат в AITasker до финального ответа.`
           }
         }
       ]
@@ -819,28 +772,22 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
           role: "user",
           content: {
             type: "text",
-            text: `Ты сжимаешь переписку по задаче, сохраненной в AITasker, обратно в основной план.
+            text: `Сожми обсуждение задачи в AITasker обратно в основной план через MCP.
 
-Проект из запроса пользователя: ${projectRef}
-Ссылка на задачу из запроса пользователя: ${taskRef}
-Дополнительные инструкции: ${instructions?.trim() || "none"}
+Вход:
+{
+  "mcp": "aitasker",
+  "action": "consolidate_plan_discussion",
+  "projectRef": "${projectRef}",
+  "taskRef": "${taskRef}",
+  "read": ["get_task", "get_plan"],
+  "write": ["consolidate_plan_discussion"],
+  "rules": ["resolve_project", "resolve_task", "merge_discussion_into_plan", "save_open_questions_separately"]
+}
 
-Обязательный workflow:
-1. Активируй проект через activate_project. Если проект не найден, используй find_projects.
-2. Сразу вызови get_active_project и убедись, что карточка проекта заполнена.
-3. Разреши задачу внутри активного проекта. Если taskRef не является точным task id, используй find_tasks.
-4. Прочитай задачу через get_task, затем обязательно вызови get_plan.
-5. На основе текущего плана, открытых вопросов и переписки подготовь новый цельный Markdown-план без отдельных discussion-блоков.
-6. Если после сжатия остаются незакрытые вопросы, собери их отдельным списком строк. Не записывай их в markdown-план.
-7. Сохрани обновленный план через consolidate_plan_discussion с source="agent". Если остаются открытые вопросы, передай их отдельным полем openQuestions.
-8. После сохранения ответь кратко:
-- какой проект был активирован
-- какая задача была обновлена
-- какие ключевые изменения попали в новый план
-- остались ли отдельные открытые вопросы после сжатия
-- подтверждение, что расширения и доработки были очищены из отдельных блоков
+Доп. инструкции: ${instructions?.trim() || "none"}
 
-Не останавливайся на анализе. Обязательно вызови consolidate_plan_discussion до финального ответа.`
+Не останавливайся на анализе. Обязательно сохрани обновленный план до финального ответа.`
           }
         }
       ]
@@ -873,40 +820,22 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
           role: "user",
           content: {
             type: "text",
-            text: `Ты подготавливаешь SKILL.md для проекта в AITasker.
+            text: `Подготовь или обнови SKILL.md проекта в AITasker.
 
-Проект из запроса пользователя: ${projectRef}
-Путь к skill-файлу из запроса: ${skillPath?.trim() || "not provided"}
-Дополнительные инструкции: ${instructions?.trim() || "none"}
+Вход:
+{
+  "mcp": "aitasker",
+  "action": "sync_project_skill",
+  "projectRef": "${projectRef}",
+  "skillPath": "${skillPath?.trim() || ""}",
+  "read": ["get_active_project"],
+  "write": ["update_project_profile"],
+  "rules": ["resolve_project", "determine_skill_path", "create_or_update_skill_file", "sync_skill_path_to_project_profile"]
+}
 
-Обязательный workflow:
-1. Активируй проект через activate_project.
-Если проект не найден, используй find_projects.
+Доп. инструкции: ${instructions?.trim() || "none"}
 
-2. Сразу прочитай карточку проекта через get_active_project.
-Если description, rootPath или languages пустые, сначала заполни карточку через update_project_profile.
-
-3. Определи путь к skill-файлу.
-Приоритет:
-- путь из skillPath
-- skillFilePath из карточки проекта
-- <rootPath>/SKILL.md
-Если rootPath отсутствует и путь нельзя определить надежно, остановись и попроси пользователя указать путь.
-
-4. Создай или обнови SKILL.md на диске проекта своими файловыми инструментами.
-Файл должен помогать выполнять типовые задачи по проекту: workflow, ограничения, соглашения по коду, важные команды, структура и правила.
-
-5. После записи файла вызови update_project_profile и сохрани:
-- skillFilePath
-- при необходимости skillPrompt
-- уточненные description/rootPath/languages, если в ходе анализа нашлись более точные значения
-
-6. Ответь кратко:
-- какой проект активирован
-- где создан или обновлен SKILL.md
-- что именно описано в skill-файле
-
-Не останавливайся на плане. Если у тебя есть доступ к файловым инструментам, создай или обнови SKILL.md перед финальным ответом.`
+Если путь нельзя определить надежно, остановись и запроси его у пользователя.`
           }
         }
       ]
@@ -927,7 +856,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
           {
             uri: uri.href,
             mimeType: "application/json",
-            text: JSON.stringify(detail.task, null, 2)
+            text: JSON.stringify(serializeTask(detail.task), null, 2)
           }
         ]
       };

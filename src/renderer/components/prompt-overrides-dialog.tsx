@@ -10,15 +10,6 @@ import {
   getPromptVars,
   type PromptId
 } from "@/renderer/components/mcp-prompt-presets";
-
-const TASK_STATUSES = [
-  { value: "new", label: "Новая", color: "bg-slate-200 text-slate-700" },
-  { value: "planning", label: "Планирование", color: "bg-sky-100 text-sky-700" },
-  { value: "requires_clarification", label: "Уточнение", color: "bg-red-100 text-red-700" },
-  { value: "implementation", label: "Реализация", color: "bg-amber-100 text-amber-700" },
-  { value: "completed", label: "Завершена", color: "bg-emerald-100 text-emerald-700" },
-] as const;
-
 import { previewPromptTemplate, renderPromptTemplate } from "@/shared/prompts/prompt-template";
 import type { PromptOverrideRecord, TaskDetail } from "@/shared/contracts/desktop-api";
 import {
@@ -26,6 +17,7 @@ import {
   usePromptOverridesQuery,
   useUpsertPromptOverrideMutation
 } from "@/renderer/features/prompts/use-prompt-override-queries";
+import { TASK_STATUS_LIST } from "@/renderer/features/tasks/task-status-meta";
 import { cn } from "@/renderer/components/ui/class-names";
 import { Button } from "@/renderer/components/ui/button";
 
@@ -244,7 +236,7 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
                 Статусы задач
               </p>
               <div className="space-y-1">
-                {TASK_STATUSES.map(({ value, label, color }) => (
+                {TASK_STATUS_LIST.map(({ value, label, promptGuideClass }) => (
                   <button
                     key={value}
                     type="button"
@@ -252,7 +244,7 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
                     onClick={() => handleCopyStatus(value)}
                     className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 transition hover:bg-slate-100"
                   >
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${color}`}>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${promptGuideClass}`}>
                       {label}
                     </span>
                     <code className="text-[10px] text-slate-400">

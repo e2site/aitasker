@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Copy, History, MessageSquarePlus } from "lucide-react";
 import type { TaskDetail } from "@/shared/contracts/desktop-api";
 import { MarkdownPlanViewer } from "@/renderer/components/markdown-plan-viewer";
+import { buildPlanCommentPrompt } from "@/renderer/components/mcp-prompt-presets";
 import { openPlanRevisionWindow } from "@/renderer/components/plan-revision-window";
 import { Button } from "@/renderer/components/ui/button";
 import { MarkdownPlanEditor } from "@/renderer/editors/markdown-plan-editor";
@@ -61,20 +62,6 @@ async function copyText(text: string): Promise<boolean> {
   await navigator.clipboard.writeText(text);
 
   return true;
-}
-
-function buildCommentAgentPrompt(detail: TaskDetail, kind: CommentKind, commentId: string): string {
-  const toolName = kind === "extension" ? "get_plan_extension" : "get_plan_improvement";
-  const idFieldName = kind === "extension" ? "extensionId" : "improvementId";
-  const kindLabel = kind === "extension" ? "расширение" : "доработку";
-
-  return [
-    `Активируй в aitasker проект "${detail.task.projectName}".`,
-    `Открой задачу "${detail.task.title}" (${detail.task.id}).`,
-    `Вызови ${toolName} с taskId="${detail.task.id}" и ${idFieldName}="${commentId}".`,
-    `Обработай только это ${kindLabel} без чтения всего плана, если это не требуется дополнительно.`,
-    "Если нужно вернуть результат в обсуждение, используй append_plan_extension или append_plan_improvement."
-  ].join(" ");
 }
 
 export interface TaskPlanWorkspaceProps {
@@ -416,7 +403,7 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
                                   title="Скопировать prompt для AI агента"
                                   onClick={async () => {
                                     const copied = await copyText(
-                                      buildCommentAgentPrompt(props.detail, kind as CommentKind, comment.id)
+                                      buildPlanCommentPrompt(props.detail, kind as CommentKind, comment.id)
                                     );
                                     if (copied) {
                                       setCopiedCommentPromptId(comment.id);

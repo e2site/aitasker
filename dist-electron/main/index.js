@@ -89,8 +89,32 @@ var taskResourcesTable = sqliteTable("task_resources", {
   comment: text("comment").notNull().default(""),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull()
 });
+var planCommentsTable = sqliteTable("plan_comments", {
+  id: text("id").primaryKey(),
+  planId: text("plan_id").notNull().references(() => plansTable.id, { onDelete: "cascade" }),
+  taskId: text("task_id").notNull().references(() => tasksTable.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  // "discussion" | "extension" | "improvement"
+  author: text("author").notNull(),
+  // "human" | "agent"
+  content: text("content").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+var planQuestionsTable = sqliteTable("plan_questions", {
+  id: text("id").primaryKey(),
+  planId: text("plan_id").notNull().references(() => plansTable.id, { onDelete: "cascade" }),
+  taskId: text("task_id").notNull().references(() => tasksTable.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  answer: text("answer"),
+  answeredAt: integer("answered_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
 var databaseSchema = {
   agentSessionsTable,
+  planCommentsTable,
+  planQuestionsTable,
   planRevisionsTable,
   plansTable,
   projectsTable,
@@ -260,6 +284,32 @@ function bootstrapDatabase(sqlite) {
       comment TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS plan_comments (
+      id TEXT PRIMARY KEY NOT NULL,
+      plan_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      author TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS plan_questions (
+      id TEXT PRIMARY KEY NOT NULL,
+      plan_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      answer TEXT,
+      answered_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
   `);
   if (!hasColumn(sqlite, "tasks", "project_id")) {
     sqlite.exec(`ALTER TABLE tasks ADD COLUMN project_id TEXT;`);
@@ -344,6 +394,10 @@ function bootstrapDatabase(sqlite) {
     CREATE INDEX IF NOT EXISTS idx_task_links_target_task_id ON task_links(target_task_id);
     CREATE INDEX IF NOT EXISTS idx_task_resources_task_id ON task_resources(task_id);
     CREATE INDEX IF NOT EXISTS idx_task_resources_resource_id ON task_resources(resource_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_comments_task_id ON plan_comments(task_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_comments_plan_id ON plan_comments(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_questions_task_id ON plan_questions(task_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_questions_plan_id ON plan_questions(plan_id);
   `);
 }
 
@@ -362,9 +416,90 @@ function createAppDatabase(userDataPath) {
   };
 }
 
-// src/main/db/plan-repository.ts
+// src/main/db/plan-comment-repository.ts
 import { randomUUID as randomUUID2 } from "crypto";
-import { desc, eq as eq2 } from "drizzle-orm";
+import { and, eq as eq2 } from "drizzle-orm";
+function toCommentRecord(row) {
+  return {
+    id: row.id,
+    planId: row.planId,
+    taskId: row.taskId,
+    kind: row.kind,
+    author: row.author,
+    content: row.content,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+function toQuestionRecord(row) {
+  return {
+    id: row.id,
+    planId: row.planId,
+    taskId: row.taskId,
+    content: row.content,
+    answer: row.answer ?? null,
+    answeredAt: row.answeredAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+var PlanCommentRepository = class {
+  constructor(database) {
+    this.database = database;
+  }
+  // ─── Comments ───────────────────────────────────────────────────────────────
+  async addComment(input) {
+    const id = randomUUID2();
+    const now = /* @__PURE__ */ new Date();
+    this.database.insert(planCommentsTable).values({ id, ...input, createdAt: now, updatedAt: now }).run();
+    const row = this.database.select().from(planCommentsTable).where(eq2(planCommentsTable.id, id)).get();
+    if (!row) throw new Error(`PlanComment ${id} not found after insert.`);
+    return toCommentRecord(row);
+  }
+  async listCommentsByTaskId(taskId) {
+    const rows = this.database.select().from(planCommentsTable).where(eq2(planCommentsTable.taskId, taskId)).all();
+    return rows.map(toCommentRecord);
+  }
+  async deleteCommentsByPlanId(planId) {
+    this.database.delete(planCommentsTable).where(eq2(planCommentsTable.planId, planId)).run();
+  }
+  // ─── Questions ───────────────────────────────────────────────────────────────
+  async addQuestion(input) {
+    const id = randomUUID2();
+    const now = /* @__PURE__ */ new Date();
+    this.database.insert(planQuestionsTable).values({ id, ...input, answer: null, answeredAt: null, createdAt: now, updatedAt: now }).run();
+    const row = this.database.select().from(planQuestionsTable).where(eq2(planQuestionsTable.id, id)).get();
+    if (!row) throw new Error(`PlanQuestion ${id} not found after insert.`);
+    return toQuestionRecord(row);
+  }
+  async answerQuestion(questionId, answer) {
+    const now = /* @__PURE__ */ new Date();
+    this.database.update(planQuestionsTable).set({ answer, answeredAt: now, updatedAt: now }).where(eq2(planQuestionsTable.id, questionId)).run();
+    const row = this.database.select().from(planQuestionsTable).where(eq2(planQuestionsTable.id, questionId)).get();
+    if (!row) throw new Error(`PlanQuestion ${questionId} not found after update.`);
+    return toQuestionRecord(row);
+  }
+  async listQuestionsByTaskId(taskId) {
+    const rows = this.database.select().from(planQuestionsTable).where(eq2(planQuestionsTable.taskId, taskId)).all();
+    return rows.map(toQuestionRecord);
+  }
+  async getQuestionById(questionId) {
+    const row = this.database.select().from(planQuestionsTable).where(eq2(planQuestionsTable.id, questionId)).get();
+    return row ? toQuestionRecord(row) : null;
+  }
+  async deleteQuestionsByPlanId(planId) {
+    this.database.delete(planQuestionsTable).where(eq2(planQuestionsTable.planId, planId)).run();
+  }
+  async deleteOpenQuestionsByPlanId(planId) {
+    this.database.delete(planQuestionsTable).where(
+      and(eq2(planQuestionsTable.planId, planId), eq2(planQuestionsTable.answeredAt, null))
+    ).run();
+  }
+};
+
+// src/main/db/plan-repository.ts
+import { randomUUID as randomUUID3 } from "crypto";
+import { desc, eq as eq3 } from "drizzle-orm";
 function toPlanRecord(row) {
   return {
     id: row.id,
@@ -386,7 +521,7 @@ function toPlanRevisionRecord(row) {
   };
 }
 async function insertRevision(database, plan) {
-  const revisionId = randomUUID2();
+  const revisionId = randomUUID3();
   database.insert(planRevisionsTable).values({
     id: revisionId,
     planId: plan.id,
@@ -395,7 +530,7 @@ async function insertRevision(database, plan) {
     source: plan.source,
     createdAt: /* @__PURE__ */ new Date()
   }).run();
-  const createdRevision = database.select().from(planRevisionsTable).where(eq2(planRevisionsTable.id, revisionId)).get();
+  const createdRevision = database.select().from(planRevisionsTable).where(eq3(planRevisionsTable.id, revisionId)).get();
   if (!createdRevision) {
     throw new Error("\u0420\u0435\u0432\u0438\u0437\u0438\u044F \u043F\u043B\u0430\u043D\u0430 \u0441\u043E\u0437\u0434\u0430\u043D\u0430, \u043D\u043E \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0442\u044C \u0435\u0435 \u0438\u0437 \u0431\u0430\u0437\u044B.");
   }
@@ -406,15 +541,15 @@ var PlanRepository = class {
     this.database = database;
   }
   async getByTaskId(taskId) {
-    const row = this.database.select().from(plansTable).where(eq2(plansTable.taskId, taskId)).get();
+    const row = this.database.select().from(plansTable).where(eq3(plansTable.taskId, taskId)).get();
     return row ? toPlanRecord(row) : null;
   }
   async getRevisionById(revisionId) {
-    const row = this.database.select().from(planRevisionsTable).where(eq2(planRevisionsTable.id, revisionId)).get();
+    const row = this.database.select().from(planRevisionsTable).where(eq3(planRevisionsTable.id, revisionId)).get();
     return row ? toPlanRevisionRecord(row) : null;
   }
   async listRevisions(taskId) {
-    const rows = this.database.select().from(planRevisionsTable).where(eq2(planRevisionsTable.taskId, taskId)).orderBy(desc(planRevisionsTable.createdAt)).all();
+    const rows = this.database.select().from(planRevisionsTable).where(eq3(planRevisionsTable.taskId, taskId)).orderBy(desc(planRevisionsTable.createdAt)).all();
     return rows.map(toPlanRevisionRecord);
   }
   async restoreRevision(input) {
@@ -422,7 +557,7 @@ var PlanRepository = class {
     if (!revision || revision.taskId !== input.taskId) {
       throw new Error(`\u0420\u0435\u0432\u0438\u0437\u0438\u044F ${input.revisionId} \u0434\u043B\u044F \u0437\u0430\u0434\u0430\u0447\u0438 ${input.taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430.`);
     }
-    const existing = this.database.select().from(plansTable).where(eq2(plansTable.taskId, input.taskId)).get();
+    const existing = this.database.select().from(plansTable).where(eq3(plansTable.taskId, input.taskId)).get();
     if (!existing) {
       throw new Error(`\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u043F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 ${input.taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
     }
@@ -430,7 +565,7 @@ var PlanRepository = class {
       contentMd: revision.contentMd,
       source: revision.source,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq2(plansTable.taskId, input.taskId)).run();
+    }).where(eq3(plansTable.taskId, input.taskId)).run();
     const restored = await this.getByTaskId(input.taskId);
     if (!restored) {
       throw new Error("\u041F\u043B\u0430\u043D \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D, \u043D\u043E \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0435\u0440\u0435\u0447\u0438\u0442\u0430\u0442\u044C \u0435\u0433\u043E \u0438\u0437 \u0431\u0430\u0437\u044B.");
@@ -439,7 +574,7 @@ var PlanRepository = class {
   }
   async save(input) {
     const now = /* @__PURE__ */ new Date();
-    const existing = this.database.select().from(plansTable).where(eq2(plansTable.taskId, input.taskId)).get();
+    const existing = this.database.select().from(plansTable).where(eq3(plansTable.taskId, input.taskId)).get();
     if (existing) {
       const hasChanges = existing.contentMd !== input.contentMd || existing.source !== input.source;
       if (hasChanges && input.createRevision) {
@@ -449,10 +584,10 @@ var PlanRepository = class {
         contentMd: input.contentMd,
         source: input.source,
         updatedAt: now
-      }).where(eq2(plansTable.taskId, input.taskId)).run();
+      }).where(eq3(plansTable.taskId, input.taskId)).run();
     } else {
       this.database.insert(plansTable).values({
-        id: randomUUID2(),
+        id: randomUUID3(),
         taskId: input.taskId,
         contentMd: input.contentMd,
         source: input.source,
@@ -469,8 +604,8 @@ var PlanRepository = class {
 };
 
 // src/main/db/project-repository.ts
-import { randomUUID as randomUUID3 } from "crypto";
-import { desc as desc2, eq as eq3 } from "drizzle-orm";
+import { randomUUID as randomUUID4 } from "crypto";
+import { desc as desc2, eq as eq4 } from "drizzle-orm";
 function normalizeWhitespace(value) {
   return value.trim().replace(/\s+/g, " ");
 }
@@ -526,7 +661,7 @@ var ProjectRepository = class {
     }
     const now = /* @__PURE__ */ new Date();
     const sanitizedName = sanitizeProjectName(input.name);
-    const id = randomUUID3();
+    const id = randomUUID4();
     this.database.insert(projectsTable).values({
       id,
       name: sanitizedName,
@@ -546,11 +681,11 @@ var ProjectRepository = class {
     return created;
   }
   async findByName(name) {
-    const row = this.database.select().from(projectsTable).where(eq3(projectsTable.normalizedName, normalizeProjectName(name))).get();
+    const row = this.database.select().from(projectsTable).where(eq4(projectsTable.normalizedName, normalizeProjectName(name))).get();
     return row ? toProjectRecord(row) : null;
   }
   async getById(projectId) {
-    const row = this.database.select().from(projectsTable).where(eq3(projectsTable.id, projectId)).get();
+    const row = this.database.select().from(projectsTable).where(eq4(projectsTable.id, projectId)).get();
     return row ? toProjectRecord(row) : null;
   }
   async list() {
@@ -560,10 +695,10 @@ var ProjectRepository = class {
   async touch(projectId) {
     this.database.update(projectsTable).set({
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq3(projectsTable.id, projectId)).run();
+    }).where(eq4(projectsTable.id, projectId)).run();
   }
   async updateProfile(input) {
-    const existing = this.database.select().from(projectsTable).where(eq3(projectsTable.id, input.projectId)).get();
+    const existing = this.database.select().from(projectsTable).where(eq4(projectsTable.id, input.projectId)).get();
     if (!existing) {
       throw new Error(`\u041F\u0440\u043E\u0435\u043A\u0442 ${input.projectId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
     }
@@ -582,7 +717,7 @@ var ProjectRepository = class {
       skillFilePath: nextSkillFilePath,
       skillPrompt: nextSkillPrompt,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq3(projectsTable.id, input.projectId)).run();
+    }).where(eq4(projectsTable.id, input.projectId)).run();
     const updated = await this.getById(input.projectId);
     if (!updated) {
       throw new Error(`\u041F\u0440\u043E\u0435\u043A\u0442 ${input.projectId} \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D, \u043D\u043E \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0435\u0440\u0435\u0447\u0438\u0442\u0430\u0442\u044C \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443.`);
@@ -592,23 +727,23 @@ var ProjectRepository = class {
 };
 
 // src/main/db/prompt-override-repository.ts
-import { eq as eq4 } from "drizzle-orm";
+import { eq as eq5 } from "drizzle-orm";
 var PromptOverrideRepository = class {
   constructor(db) {
     this.db = db;
   }
   upsert(id, template) {
     const now = Date.now();
-    const existing = this.db.select().from(promptOverridesTable).where(eq4(promptOverridesTable.id, id)).all();
+    const existing = this.db.select().from(promptOverridesTable).where(eq5(promptOverridesTable.id, id)).all();
     if (existing.length > 0) {
-      this.db.update(promptOverridesTable).set({ template, updatedAt: new Date(now) }).where(eq4(promptOverridesTable.id, id)).run();
+      this.db.update(promptOverridesTable).set({ template, updatedAt: new Date(now) }).where(eq5(promptOverridesTable.id, id)).run();
     } else {
       this.db.insert(promptOverridesTable).values({ id, template, createdAt: new Date(now), updatedAt: new Date(now) }).run();
     }
     return this.toRecord(id, template, existing[0]?.createdAt ?? new Date(now), new Date(now));
   }
   getById(id) {
-    const rows = this.db.select().from(promptOverridesTable).where(eq4(promptOverridesTable.id, id)).all();
+    const rows = this.db.select().from(promptOverridesTable).where(eq5(promptOverridesTable.id, id)).all();
     if (rows.length === 0) return null;
     const row = rows[0];
     return this.toRecord(row.id, row.template, row.createdAt, row.updatedAt);
@@ -617,7 +752,7 @@ var PromptOverrideRepository = class {
     return this.db.select().from(promptOverridesTable).all().map((row) => this.toRecord(row.id, row.template, row.createdAt, row.updatedAt));
   }
   delete(id) {
-    const result = this.db.delete(promptOverridesTable).where(eq4(promptOverridesTable.id, id)).run();
+    const result = this.db.delete(promptOverridesTable).where(eq5(promptOverridesTable.id, id)).run();
     return result.changes > 0;
   }
   toRecord(id, template, createdAt, updatedAt) {
@@ -631,8 +766,8 @@ var PromptOverrideRepository = class {
 };
 
 // src/main/db/resource-repository.ts
-import { randomUUID as randomUUID4 } from "crypto";
-import { desc as desc3, eq as eq5 } from "drizzle-orm";
+import { randomUUID as randomUUID5 } from "crypto";
+import { desc as desc3, eq as eq6 } from "drizzle-orm";
 function mapRow(row) {
   return {
     id: row.id,
@@ -647,7 +782,7 @@ var ResourceRepository = class {
     this.database = database;
   }
   async create(input) {
-    const id = randomUUID4();
+    const id = randomUUID5();
     const now = /* @__PURE__ */ new Date();
     this.database.insert(resourcesTable).values({
       id,
@@ -656,14 +791,14 @@ var ResourceRepository = class {
       createdAt: now,
       updatedAt: now
     }).run();
-    const row = this.database.select().from(resourcesTable).where(eq5(resourcesTable.id, id)).get();
+    const row = this.database.select().from(resourcesTable).where(eq6(resourcesTable.id, id)).get();
     if (!row) {
       throw new Error(`Resource ${id} not found after create.`);
     }
     return mapRow(row);
   }
   async getById(id) {
-    const row = this.database.select().from(resourcesTable).where(eq5(resourcesTable.id, id)).get();
+    const row = this.database.select().from(resourcesTable).where(eq6(resourcesTable.id, id)).get();
     return row ? mapRow(row) : void 0;
   }
   async list() {
@@ -676,27 +811,27 @@ var ResourceRepository = class {
       ...input.name !== void 0 ? { name: input.name } : {},
       ...input.contentMd !== void 0 ? { contentMd: input.contentMd } : {},
       updatedAt: now
-    }).where(eq5(resourcesTable.id, id)).run();
-    const row = this.database.select().from(resourcesTable).where(eq5(resourcesTable.id, id)).get();
+    }).where(eq6(resourcesTable.id, id)).run();
+    const row = this.database.select().from(resourcesTable).where(eq6(resourcesTable.id, id)).get();
     if (!row) {
       throw new Error(`Resource ${id} not found.`);
     }
     return mapRow(row);
   }
   async delete(id) {
-    this.database.delete(resourcesTable).where(eq5(resourcesTable.id, id)).run();
+    this.database.delete(resourcesTable).where(eq6(resourcesTable.id, id)).run();
   }
 };
 
 // src/main/db/task-link-repository.ts
-import { randomUUID as randomUUID5 } from "crypto";
-import { eq as eq6, or } from "drizzle-orm";
+import { randomUUID as randomUUID6 } from "crypto";
+import { eq as eq7, or } from "drizzle-orm";
 var TaskLinkRepository = class {
   constructor(database) {
     this.database = database;
   }
   async create(input) {
-    const id = randomUUID5();
+    const id = randomUUID6();
     const now = /* @__PURE__ */ new Date();
     this.database.insert(taskLinksTable).values({
       id,
@@ -727,10 +862,10 @@ var TaskLinkRepository = class {
     }).from(taskLinksTable).innerJoin(
       tasksTable,
       or(
-        eq6(taskLinksTable.targetTaskId, tasksTable.id),
-        eq6(taskLinksTable.sourceTaskId, tasksTable.id)
+        eq7(taskLinksTable.targetTaskId, tasksTable.id),
+        eq7(taskLinksTable.sourceTaskId, tasksTable.id)
       )
-    ).innerJoin(projectsTable, eq6(tasksTable.projectId, projectsTable.id)).where(or(eq6(taskLinksTable.sourceTaskId, taskId), eq6(taskLinksTable.targetTaskId, taskId))).all();
+    ).innerJoin(projectsTable, eq7(tasksTable.projectId, projectsTable.id)).where(or(eq7(taskLinksTable.sourceTaskId, taskId), eq7(taskLinksTable.targetTaskId, taskId))).all();
     const result = [];
     for (const row of rows) {
       if (row.linkedTaskId === taskId) {
@@ -751,14 +886,14 @@ var TaskLinkRepository = class {
     return result;
   }
   async delete(linkId) {
-    const result = this.database.delete(taskLinksTable).where(eq6(taskLinksTable.id, linkId)).run();
+    const result = this.database.delete(taskLinksTable).where(eq7(taskLinksTable.id, linkId)).run();
     return result.changes > 0;
   }
 };
 
 // src/main/db/task-repository.ts
-import { randomUUID as randomUUID6 } from "crypto";
-import { and, desc as desc4, eq as eq7 } from "drizzle-orm";
+import { randomUUID as randomUUID7 } from "crypto";
+import { and as and2, desc as desc4, eq as eq8 } from "drizzle-orm";
 function normalizeTaskStatus(status) {
   switch (status) {
     case "draft":
@@ -797,7 +932,7 @@ var TaskRepository = class {
   }
   async create(input) {
     const now = /* @__PURE__ */ new Date();
-    const id = randomUUID6();
+    const id = randomUUID7();
     this.database.insert(tasksTable).values({
       id,
       projectId: input.projectId,
@@ -824,13 +959,13 @@ var TaskRepository = class {
       planContentMd: plansTable.contentMd,
       createdAt: tasksTable.createdAt,
       updatedAt: tasksTable.updatedAt
-    }).from(tasksTable).innerJoin(projectsTable, eq7(tasksTable.projectId, projectsTable.id)).leftJoin(plansTable, eq7(plansTable.taskId, tasksTable.id)).where(
-      projectId ? and(eq7(tasksTable.id, taskId), eq7(tasksTable.projectId, projectId)) : eq7(tasksTable.id, taskId)
+    }).from(tasksTable).innerJoin(projectsTable, eq8(tasksTable.projectId, projectsTable.id)).leftJoin(plansTable, eq8(plansTable.taskId, tasksTable.id)).where(
+      projectId ? and2(eq8(tasksTable.id, taskId), eq8(tasksTable.projectId, projectId)) : eq8(tasksTable.id, taskId)
     ).get();
     return row ? toTaskRecord(row) : null;
   }
   async delete(taskId) {
-    const result = this.database.delete(tasksTable).where(eq7(tasksTable.id, taskId)).run();
+    const result = this.database.delete(tasksTable).where(eq8(tasksTable.id, taskId)).run();
     return result.changes > 0;
   }
   async list(projectId) {
@@ -844,34 +979,34 @@ var TaskRepository = class {
       planContentMd: plansTable.contentMd,
       createdAt: tasksTable.createdAt,
       updatedAt: tasksTable.updatedAt
-    }).from(tasksTable).innerJoin(projectsTable, eq7(tasksTable.projectId, projectsTable.id)).leftJoin(plansTable, eq7(plansTable.taskId, tasksTable.id)).where(projectId ? eq7(tasksTable.projectId, projectId) : void 0).orderBy(desc4(tasksTable.updatedAt)).all();
+    }).from(tasksTable).innerJoin(projectsTable, eq8(tasksTable.projectId, projectsTable.id)).leftJoin(plansTable, eq8(plansTable.taskId, tasksTable.id)).where(projectId ? eq8(tasksTable.projectId, projectId) : void 0).orderBy(desc4(tasksTable.updatedAt)).all();
     return rows.map(toTaskRecord);
   }
   async touch(taskId) {
     this.database.update(tasksTable).set({
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq7(tasksTable.id, taskId)).run();
+    }).where(eq8(tasksTable.id, taskId)).run();
   }
   async update(taskId, fields) {
-    this.database.update(tasksTable).set({ ...fields, updatedAt: /* @__PURE__ */ new Date() }).where(eq7(tasksTable.id, taskId)).run();
+    this.database.update(tasksTable).set({ ...fields, updatedAt: /* @__PURE__ */ new Date() }).where(eq8(tasksTable.id, taskId)).run();
   }
   async updateStatus(taskId, status) {
     this.database.update(tasksTable).set({
       status,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq7(tasksTable.id, taskId)).run();
+    }).where(eq8(tasksTable.id, taskId)).run();
   }
 };
 
 // src/main/db/task-resource-repository.ts
-import { randomUUID as randomUUID7 } from "crypto";
-import { eq as eq8 } from "drizzle-orm";
+import { randomUUID as randomUUID8 } from "crypto";
+import { eq as eq9 } from "drizzle-orm";
 var TaskResourceRepository = class {
   constructor(database) {
     this.database = database;
   }
   async link(input) {
-    const id = randomUUID7();
+    const id = randomUUID8();
     const now = /* @__PURE__ */ new Date();
     this.database.insert(taskResourcesTable).values({
       id,
@@ -887,7 +1022,7 @@ var TaskResourceRepository = class {
       createdAt: taskResourcesTable.createdAt,
       name: resourcesTable.name,
       contentMd: resourcesTable.contentMd
-    }).from(taskResourcesTable).innerJoin(resourcesTable, eq8(taskResourcesTable.resourceId, resourcesTable.id)).where(eq8(taskResourcesTable.id, id)).get();
+    }).from(taskResourcesTable).innerJoin(resourcesTable, eq9(taskResourcesTable.resourceId, resourcesTable.id)).where(eq9(taskResourcesTable.id, id)).get();
     if (!row) {
       throw new Error(`TaskResource ${id} not found after create.`);
     }
@@ -908,7 +1043,7 @@ var TaskResourceRepository = class {
       createdAt: taskResourcesTable.createdAt,
       name: resourcesTable.name,
       contentMd: resourcesTable.contentMd
-    }).from(taskResourcesTable).innerJoin(resourcesTable, eq8(taskResourcesTable.resourceId, resourcesTable.id)).where(eq8(taskResourcesTable.taskId, taskId)).all();
+    }).from(taskResourcesTable).innerJoin(resourcesTable, eq9(taskResourcesTable.resourceId, resourcesTable.id)).where(eq9(taskResourcesTable.taskId, taskId)).all();
     return rows.map((row) => ({
       id: row.linkId,
       resourceId: row.resourceId,
@@ -919,7 +1054,7 @@ var TaskResourceRepository = class {
     }));
   }
   async unlink(linkId) {
-    const result = this.database.delete(taskResourcesTable).where(eq8(taskResourcesTable.id, linkId)).run();
+    const result = this.database.delete(taskResourcesTable).where(eq9(taskResourcesTable.id, linkId)).run();
     return result.changes > 0;
   }
 };
@@ -994,6 +1129,27 @@ var resourceRecordSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string()
 });
+var planCommentKindSchema = z.enum(["discussion", "extension", "improvement"]);
+var planCommentRecordSchema = z.object({
+  id: z.string(),
+  planId: z.string(),
+  taskId: z.string(),
+  kind: planCommentKindSchema,
+  author: planDiscussionAuthorSchema,
+  content: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+var planQuestionRecordSchema = z.object({
+  id: z.string(),
+  planId: z.string(),
+  taskId: z.string(),
+  content: z.string(),
+  answer: z.string().nullable(),
+  answeredAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
 var linkedResourceRecordSchema = z.object({
   id: z.string(),
   resourceId: z.string(),
@@ -1017,6 +1173,8 @@ var taskDetailSchema = z.object({
   task: taskRecordSchema,
   plan: planRecordSchema.nullable(),
   planRevisions: z.array(planRevisionRecordSchema),
+  planComments: z.array(planCommentRecordSchema),
+  planQuestions: z.array(planQuestionRecordSchema),
   agentSession: agentSessionRecordSchema.nullable(),
   linkedTasks: z.array(linkedTaskRecordSchema),
   linkedResources: z.array(linkedResourceRecordSchema)
@@ -1093,6 +1251,10 @@ var answerPlanQuestionInputSchema = z.object({
   questionId: z.string(),
   answer: z.string().trim().min(1).max(4e3)
 });
+var addPlanQuestionInputSchema = z.object({
+  taskId: z.string(),
+  content: z.string().trim().min(1).max(4e3)
+});
 var createResourceInputSchema = z.object({
   name: z.string().trim().min(1, "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0440\u0435\u0441\u0443\u0440\u0441\u0430.").max(200),
   contentMd: z.string().optional()
@@ -1160,9 +1322,11 @@ var deletePromptOverrideInputSchema = z.object({
 var desktopDataChangeEventSchema = z.object({
   projectId: z.string().nullable(),
   reason: z.enum([
+    "add-plan-comment",
+    "add-plan-question",
+    "answer-plan-question",
     "append-plan-extension",
     "append-plan-improvement",
-    "answer-plan-question",
     "consolidate-plan-discussion",
     "create-project",
     "create-resource",
@@ -1289,14 +1453,6 @@ function parseLegacyItems(body) {
       createdAt: null
     })
   );
-}
-function formatHiddenSection(config, values) {
-  if (values.length === 0) {
-    return "";
-  }
-  return `<!-- ${config.startMarker}
-${JSON.stringify(values, null, 2)}
-${config.endMarker} -->`;
 }
 function extractHiddenCommentSection(contentMd, config) {
   const pattern = new RegExp(
@@ -1429,16 +1585,6 @@ function stripRenderedDiscussionSections(contentMd) {
   );
   return normalizeMarkdown(normalizedContent.replace(sectionsPattern, ""));
 }
-function composeManagedPlanContent(baseContentMd, extensions, improvements, discussion, questions) {
-  const parts = [
-    normalizeMarkdown(baseContentMd),
-    formatHiddenSection(hiddenSectionConfigByKind.extension, extensions),
-    formatHiddenSection(hiddenSectionConfigByKind.improvement, improvements),
-    formatHiddenSection(hiddenSectionConfigByKind.discussion, discussion),
-    formatHiddenSection({ endMarker: QUESTIONS_MARKER_END, startMarker: QUESTIONS_MARKER_START, title: QUESTIONS_TITLE }, questions)
-  ].filter(Boolean);
-  return parts.join("\n\n").trim();
-}
 function parseManagedPlanContent(contentMd) {
   const normalizedContent = normalizeMarkdown(contentMd);
   const extractedExtensionsHidden = extractHiddenCommentSection(normalizedContent, hiddenSectionConfigByKind.extension);
@@ -1478,108 +1624,9 @@ function parseManagedPlanContent(contentMd) {
     ].filter(Boolean).join("\n\n").trim()
   };
 }
-function appendManagedPlanBlock(contentMd, kind, value, author) {
-  const parsed = parseManagedPlanContent(contentMd);
-  const normalizedValue = normalizeMarkdown(value);
-  if (!normalizedValue) {
-    return composeManagedPlanContent(
-      parsed.baseContentMd,
-      parsed.extensions,
-      parsed.improvements,
-      parsed.discussion,
-      parsed.questions
-    );
-  }
-  const nextComment = formatManagedPlanComment({
-    author,
-    content: normalizedValue,
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  });
-  return composeManagedPlanContent(
-    parsed.baseContentMd,
-    kind === "extension" ? [...parsed.extensions, nextComment] : parsed.extensions,
-    kind === "improvement" ? [...parsed.improvements, nextComment] : parsed.improvements,
-    kind === "discussion" ? [...parsed.discussion, nextComment] : parsed.discussion,
-    parsed.questions
-  );
-}
-function replaceBasePlanContent(contentMd, nextBaseContentMd) {
-  const parsed = parseManagedPlanContent(contentMd);
-  return composeManagedPlanContent(
-    nextBaseContentMd,
-    parsed.extensions,
-    parsed.improvements,
-    parsed.discussion,
-    parsed.questions
-  );
-}
-function replaceManagedPlanQuestions(contentMd, nextQuestions) {
-  const parsed = parseManagedPlanContent(contentMd);
-  const questions = nextQuestions.map(
-    (question) => formatManagedPlanQuestion({
-      content: question,
-      createdAt: (/* @__PURE__ */ new Date()).toISOString()
-    })
-  ).filter((question) => Boolean(question.content));
-  return composeManagedPlanContent(
-    parsed.baseContentMd,
-    parsed.extensions,
-    parsed.improvements,
-    parsed.discussion,
-    questions
-  );
-}
-function answerManagedPlanQuestion(contentMd, questionId, answer) {
-  const parsed = parseManagedPlanContent(contentMd);
-  const question = parsed.questions.find((item) => item.id === questionId);
-  const normalizedAnswer = normalizeMarkdown(answer);
-  if (!question || !normalizedAnswer) {
-    return composeManagedPlanContent(
-      parsed.baseContentMd,
-      parsed.extensions,
-      parsed.improvements,
-      parsed.discussion,
-      parsed.questions
-    );
-  }
-  return composeManagedPlanContent(
-    parsed.baseContentMd,
-    parsed.extensions,
-    parsed.improvements,
-    [
-      ...parsed.discussion,
-      formatManagedPlanComment({
-        author: "agent",
-        content: `**\u0412\u043E\u043F\u0440\u043E\u0441:** ${question.content}`,
-        createdAt: question.createdAt
-      }),
-      formatManagedPlanComment({
-        author: "human",
-        content: `**\u041E\u0442\u0432\u0435\u0442:** ${normalizedAnswer}`,
-        createdAt: (/* @__PURE__ */ new Date()).toISOString()
-      })
-    ],
-    parsed.questions.filter((item) => item.id !== questionId)
-  );
-}
-function consolidateManagedPlanDiscussion(contentMd, nextBaseContentMd, nextQuestions) {
-  const parsed = parseManagedPlanContent(contentMd);
-  const questions = nextQuestions === void 0 ? parsed.questions : nextQuestions.map(
-    (question) => formatManagedPlanQuestion({
-      content: question,
-      createdAt: (/* @__PURE__ */ new Date()).toISOString()
-    })
-  ).filter((question) => Boolean(question.content));
-  return composeManagedPlanContent(nextBaseContentMd, [], [], [], questions);
-}
 function extractBasePlanContent(contentMd) {
   const parsed = parseManagedPlanContent(contentMd);
   return stripRenderedDiscussionSections(parsed.baseContentMd);
-}
-function findManagedPlanComment(contentMd, kind, commentId) {
-  const parsed = parseManagedPlanContent(contentMd);
-  const comments = kind === "extension" ? parsed.extensions : kind === "improvement" ? parsed.improvements : parsed.discussion;
-  return comments.find((comment) => comment.id === commentId) ?? null;
 }
 
 // src/main/services/app-service.ts
@@ -1596,9 +1643,11 @@ function createAppService(dependencies) {
     if (!project) {
       throw new Error(`Project ${task.projectId} was not found.`);
     }
-    const [plan, planRevisions, agentSession, linkedTasks, linkedResources] = await Promise.all([
+    const [plan, planRevisions, planComments, planQuestions, agentSession, linkedTasks, linkedResources] = await Promise.all([
       dependencies.planRepository.getByTaskId(taskId),
       dependencies.planRepository.listRevisions(taskId),
+      dependencies.planCommentRepository.listCommentsByTaskId(taskId),
+      dependencies.planCommentRepository.listQuestionsByTaskId(taskId),
       dependencies.agentSessionRepository.getByTaskId(taskId),
       dependencies.taskLinkRepository.listByTaskId(taskId),
       dependencies.taskResourceRepository.listByTaskId(taskId)
@@ -1608,6 +1657,8 @@ function createAppService(dependencies) {
       task,
       plan,
       planRevisions,
+      planComments,
+      planQuestions,
       agentSession,
       linkedTasks,
       linkedResources
@@ -1627,25 +1678,41 @@ function createAppService(dependencies) {
     throw new Error("Project id or project name is required.");
   };
   return {
-    async answerPlanQuestion(input) {
-      const parsedInput = answerPlanQuestionInputSchema.parse(input);
+    async addPlanQuestion(input) {
+      const parsedInput = addPlanQuestionInputSchema.parse(input);
       const detail = await getTaskDetail(parsedInput.taskId);
       if (!detail.plan) {
-        throw new Error("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0437\u0434\u0430\u0439\u0442\u0435 \u0438\u043B\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0431\u0430\u0437\u043E\u0432\u044B\u0439 \u043F\u043B\u0430\u043D, \u0437\u0430\u0442\u0435\u043C \u043E\u0442\u0432\u0435\u0447\u0430\u0439\u0442\u0435 \u043D\u0430 \u0432\u043E\u043F\u0440\u043E\u0441\u044B.");
+        throw new Error("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0437\u0434\u0430\u0439\u0442\u0435 \u0438\u043B\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0431\u0430\u0437\u043E\u0432\u044B\u0439 \u043F\u043B\u0430\u043D, \u0437\u0430\u0442\u0435\u043C \u0434\u043E\u0431\u0430\u0432\u043B\u044F\u0439\u0442\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B.");
       }
-      await dependencies.planRepository.save({
+      const question = await dependencies.planCommentRepository.addQuestion({
+        planId: detail.plan.id,
         taskId: parsedInput.taskId,
-        contentMd: answerManagedPlanQuestion(detail.plan.contentMd, parsedInput.questionId, parsedInput.answer),
-        source: detail.plan.source
+        content: parsedInput.content
       });
-      await dependencies.taskRepository.touch(parsedInput.taskId);
-      await dependencies.projectRepository.touch(detail.task.projectId);
+      emitDataChanged({
+        reason: "add-plan-question",
+        projectId: detail.task.projectId,
+        taskId: parsedInput.taskId
+      });
+      return question;
+    },
+    async answerPlanQuestion(input) {
+      const parsedInput = answerPlanQuestionInputSchema.parse(input);
+      const question = await dependencies.planCommentRepository.getQuestionById(parsedInput.questionId);
+      if (!question || question.taskId !== parsedInput.taskId) {
+        throw new Error(`\u0412\u043E\u043F\u0440\u043E\u0441 ${parsedInput.questionId} \u0434\u043B\u044F \u0437\u0430\u0434\u0430\u0447\u0438 ${parsedInput.taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
+      }
+      const answered = await dependencies.planCommentRepository.answerQuestion(
+        parsedInput.questionId,
+        parsedInput.answer
+      );
+      const detail = await getTaskDetail(parsedInput.taskId);
       emitDataChanged({
         reason: "answer-plan-question",
         projectId: detail.task.projectId,
         taskId: parsedInput.taskId
       });
-      return getTaskDetail(parsedInput.taskId);
+      return answered;
     },
     async appendPlanExtension(input) {
       const parsedInput = appendPlanExtensionInputSchema.parse(input);
@@ -1653,24 +1720,19 @@ function createAppService(dependencies) {
       if (!detail.plan) {
         throw new Error("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0437\u0434\u0430\u0439\u0442\u0435 \u0438\u043B\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0431\u0430\u0437\u043E\u0432\u044B\u0439 \u043F\u043B\u0430\u043D, \u0437\u0430\u0442\u0435\u043C \u0434\u043E\u0431\u0430\u0432\u043B\u044F\u0439\u0442\u0435 \u0435\u0433\u043E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F.");
       }
-      await dependencies.planRepository.save({
+      const comment = await dependencies.planCommentRepository.addComment({
+        planId: detail.plan.id,
         taskId: parsedInput.taskId,
-        contentMd: appendManagedPlanBlock(
-          detail.plan.contentMd,
-          "extension",
-          parsedInput.content,
-          parsedInput.author
-        ),
-        source: detail.plan.source
+        kind: "extension",
+        author: parsedInput.author ?? "human",
+        content: parsedInput.content
       });
-      await dependencies.taskRepository.touch(parsedInput.taskId);
-      await dependencies.projectRepository.touch(detail.task.projectId);
       emitDataChanged({
-        reason: "append-plan-extension",
+        reason: "add-plan-comment",
         projectId: detail.task.projectId,
         taskId: parsedInput.taskId
       });
-      return getTaskDetail(parsedInput.taskId);
+      return comment;
     },
     async appendPlanImprovement(input) {
       const parsedInput = appendPlanImprovementInputSchema.parse(input);
@@ -1678,41 +1740,41 @@ function createAppService(dependencies) {
       if (!detail.plan) {
         throw new Error("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0437\u0434\u0430\u0439\u0442\u0435 \u0438\u043B\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0431\u0430\u0437\u043E\u0432\u044B\u0439 \u043F\u043B\u0430\u043D, \u0437\u0430\u0442\u0435\u043C \u0434\u043E\u0431\u0430\u0432\u043B\u044F\u0439\u0442\u0435 \u0435\u0433\u043E \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0438.");
       }
-      await dependencies.planRepository.save({
+      const comment = await dependencies.planCommentRepository.addComment({
+        planId: detail.plan.id,
         taskId: parsedInput.taskId,
-        contentMd: appendManagedPlanBlock(
-          detail.plan.contentMd,
-          "improvement",
-          parsedInput.content,
-          parsedInput.author
-        ),
-        source: detail.plan.source
+        kind: "improvement",
+        author: parsedInput.author ?? "human",
+        content: parsedInput.content
       });
-      await dependencies.taskRepository.touch(parsedInput.taskId);
-      await dependencies.projectRepository.touch(detail.task.projectId);
       emitDataChanged({
-        reason: "append-plan-improvement",
+        reason: "add-plan-comment",
         projectId: detail.task.projectId,
         taskId: parsedInput.taskId
       });
-      return getTaskDetail(parsedInput.taskId);
+      return comment;
     },
     async consolidatePlanDiscussion(input) {
       const parsedInput = consolidatePlanDiscussionInputSchema.parse(input);
       const detail = await getTaskDetail(parsedInput.taskId);
-      const currentPlanContent = detail.plan?.contentMd ?? "";
       const nextBaseContentMd = extractBasePlanContent(parsedInput.contentMd);
-      const finalContentMd = consolidateManagedPlanDiscussion(
-        currentPlanContent,
-        nextBaseContentMd,
-        parsedInput.openQuestions
-      );
-      await dependencies.planRepository.save({
+      const savedPlan = await dependencies.planRepository.save({
         taskId: parsedInput.taskId,
-        contentMd: finalContentMd,
+        contentMd: nextBaseContentMd,
         createRevision: parsedInput.source === "agent",
         source: parsedInput.source
       });
+      await dependencies.planCommentRepository.deleteCommentsByPlanId(savedPlan.id);
+      await dependencies.planCommentRepository.deleteOpenQuestionsByPlanId(savedPlan.id);
+      if (parsedInput.openQuestions?.length) {
+        for (const content of parsedInput.openQuestions) {
+          await dependencies.planCommentRepository.addQuestion({
+            planId: savedPlan.id,
+            taskId: parsedInput.taskId,
+            content
+          });
+        }
+      }
       await dependencies.projectRepository.touch(detail.task.projectId);
       if (parsedInput.source === "agent") {
         await dependencies.agentSessionRepository.upsert({
@@ -1839,18 +1901,23 @@ function createAppService(dependencies) {
     async savePlan(input) {
       const parsedInput = savePlanInputSchema.parse(input);
       const detail = await getTaskDetail(parsedInput.taskId);
-      const currentPlanContent = detail.plan?.contentMd ?? "";
       const nextBaseContentMd = extractBasePlanContent(parsedInput.contentMd);
-      const nextContentMd = replaceBasePlanContent(
-        currentPlanContent,
-        nextBaseContentMd
-      );
-      const finalContentMd = parsedInput.openQuestions === void 0 ? nextContentMd : replaceManagedPlanQuestions(nextContentMd, parsedInput.openQuestions);
-      await dependencies.planRepository.save({
-        ...parsedInput,
-        contentMd: finalContentMd,
-        createRevision: parsedInput.source === "agent"
+      const savedPlan = await dependencies.planRepository.save({
+        taskId: parsedInput.taskId,
+        contentMd: nextBaseContentMd,
+        createRevision: parsedInput.source === "agent",
+        source: parsedInput.source
       });
+      if (parsedInput.openQuestions !== void 0) {
+        await dependencies.planCommentRepository.deleteOpenQuestionsByPlanId(savedPlan.id);
+        for (const content of parsedInput.openQuestions) {
+          await dependencies.planCommentRepository.addQuestion({
+            planId: savedPlan.id,
+            taskId: parsedInput.taskId,
+            content
+          });
+        }
+      }
       await dependencies.projectRepository.touch(detail.task.projectId);
       if (parsedInput.source === "agent") {
         await dependencies.agentSessionRepository.upsert({
@@ -2178,7 +2245,7 @@ function registerIpcHandlers(ipcMain, appService) {
 
 // src/main/mcp/mcp-http-server.ts
 import { createServer } from "http";
-import { randomUUID as randomUUID8 } from "crypto";
+import { randomUUID as randomUUID9 } from "crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
@@ -2186,10 +2253,62 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z as z2 } from "zod";
 
-// src/main/mcp/mcp-response-presenters.ts
-function renderPlanContent(contentMd) {
-  return parseManagedPlanContent(contentMd).renderedContentMd;
+// src/renderer/components/mcp-prompt-presets.ts
+function buildRegisteredPromptMessage(promptId, args) {
+  if (promptId === "plan_task") {
+    return `\u0412\u044B\u043F\u043E\u043B\u043D\u0438 \u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 AITasker \u0447\u0435\u0440\u0435\u0437 MCP aitasker.
+
+\u041F\u0440\u043E\u0435\u043A\u0442: ${args.projectRef}
+\u0417\u0430\u0434\u0430\u0447\u0430: ${args.taskRef ?? ""}
+
+\u0428\u0430\u0433\u0438:
+1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project.
+2. \u041D\u0430\u0439\u0434\u0438 \u0437\u0430\u0434\u0430\u0447\u0443 \u0438 \u043F\u043E\u043B\u0443\u0447\u0438 \u0435\u0451 \u0434\u0430\u043D\u043D\u044B\u0435 \u0447\u0435\u0440\u0435\u0437 sync_task \u2014 \u044D\u0442\u043E \u043F\u0435\u0440\u0435\u0432\u0435\u0434\u0451\u0442 \u0441\u0435\u0441\u0441\u0438\u044E \u0432 work-\u0440\u0435\u0436\u0438\u043C.
+3. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 linkedResources \u0447\u0435\u0440\u0435\u0437 get_resource \u0435\u0441\u043B\u0438 \u043E\u043D\u0438 \u0432\u043B\u0438\u044F\u044E\u0442 \u043D\u0430 \u0437\u0430\u0434\u0430\u0447\u0443.
+4. \u0415\u0441\u043B\u0438 \u0435\u0441\u0442\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B (plan.questions) \u2014 \u043E\u0442\u0432\u0435\u0442\u044C \u0447\u0435\u0440\u0435\u0437 answer_plan_question \u0438\u043B\u0438 \u043E\u0441\u0442\u0430\u0432\u044C \u043D\u0435\u0440\u0435\u0448\u0451\u043D\u043D\u044B\u0435 \u0432 openQuestions \u043F\u0440\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0438.
+5. \u0421\u043E\u0441\u0442\u0430\u0432\u044C \u043F\u043B\u0430\u043D \u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u0447\u0435\u0440\u0435\u0437 save_plan, \u043F\u0435\u0440\u0435\u0434\u0430\u0432 openQuestions \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u043C\u0430\u0441\u0441\u0438\u0432\u043E\u043C.
+6. \u041F\u0435\u0440\u0435\u0432\u0435\u0434\u0438 \u0441\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 planning, \u0437\u0430\u0442\u0435\u043C \u0432 implementation \u0447\u0435\u0440\u0435\u0437 update_task_status.
+
+${args.instructions?.trim() ? `\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${args.instructions.trim()}` : ""}
+
+\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442 \u0432 AITasker \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`;
+  }
+  if (promptId === "compress_plan_discussion") {
+    return `\u0421\u043E\u0436\u043C\u0438 \u043E\u0431\u0441\u0443\u0436\u0434\u0435\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0432 AITasker \u0447\u0435\u0440\u0435\u0437 MCP aitasker.
+
+\u041F\u0440\u043E\u0435\u043A\u0442: ${args.projectRef}
+\u0417\u0430\u0434\u0430\u0447\u0430: ${args.taskRef ?? ""}
+
+\u0428\u0430\u0433\u0438:
+1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project.
+2. \u041F\u043E\u043B\u0443\u0447\u0438 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0447\u0435\u0440\u0435\u0437 sync_task.
+3. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u0432\u0441\u0435 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0438 (plan.comments) \u0438 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B (plan.questions).
+4. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 linkedResources \u0447\u0435\u0440\u0435\u0437 get_resource \u0435\u0441\u043B\u0438 \u043D\u0443\u0436\u043D\u044B \u0434\u043B\u044F \u043F\u043E\u043D\u0438\u043C\u0430\u043D\u0438\u044F.
+5. \u0415\u0441\u043B\u0438 \u043D\u0430 \u0432\u043E\u043F\u0440\u043E\u0441\u044B \u0435\u0441\u0442\u044C \u043E\u0442\u0432\u0435\u0442\u044B \u2014 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u0447\u0435\u0440\u0435\u0437 answer_plan_question.
+6. \u0421\u043E\u0431\u0435\u0440\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0438\u0437 \u0431\u0430\u0437\u043E\u0432\u043E\u0433\u043E \u043F\u043B\u0430\u043D\u0430 + \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0438 + \u0440\u0435\u0448\u0451\u043D\u043D\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B.
+7. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u0447\u0435\u0440\u0435\u0437 consolidate_plan_discussion, \u043D\u0435\u0440\u0435\u0448\u0451\u043D\u043D\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B \u043F\u0435\u0440\u0435\u0434\u0430\u0439 \u0432 openQuestions.
+
+${args.instructions?.trim() ? `\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${args.instructions.trim()}` : ""}
+
+\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`;
+  }
+  return `\u041F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u044C \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u0438 SKILL.md \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0432 AITasker \u0447\u0435\u0440\u0435\u0437 MCP aitasker.
+
+\u041F\u0440\u043E\u0435\u043A\u0442: ${args.projectRef}
+${args.skillPath?.trim() ? `\u041F\u0443\u0442\u044C \u043A SKILL.md: ${args.skillPath.trim()}` : ""}
+
+\u0428\u0430\u0433\u0438:
+1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project \u0438 \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443.
+2. \u041E\u043F\u0440\u0435\u0434\u0435\u043B\u0438 \u043F\u0443\u0442\u044C \u043A SKILL.md \u0438\u0437 skillFilePath \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0438\u043B\u0438 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 <rootPath>/SKILL.md.
+3. \u0421\u043E\u0437\u0434\u0430\u0439 \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u0438 \u0444\u0430\u0439\u043B SKILL.md \u0441 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435\u043C \u0441\u0442\u0435\u043A\u0430, \u043A\u043E\u043D\u0432\u0435\u043D\u0446\u0438\u0439 \u0438 \u043E\u0441\u043E\u0431\u0435\u043D\u043D\u043E\u0441\u0442\u0435\u0439 \u043F\u0440\u043E\u0435\u043A\u0442\u0430.
+4. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u043F\u0443\u0442\u044C \u043A \u0444\u0430\u0439\u043B\u0443 \u0447\u0435\u0440\u0435\u0437 update_project_profile.
+
+${args.instructions?.trim() ? `\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${args.instructions.trim()}` : ""}
+
+\u0415\u0441\u043B\u0438 \u043F\u0443\u0442\u044C \u043D\u0435\u043B\u044C\u0437\u044F \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u044C \u043D\u0430\u0434\u0451\u0436\u043D\u043E, \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0441\u044C \u0438 \u0437\u0430\u043F\u0440\u043E\u0441\u0438 \u0435\u0433\u043E \u0443 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F.`;
 }
+
+// src/main/mcp/mcp-response-presenters.ts
 function serializeProjectSummary(project) {
   return {
     id: project.id,
@@ -2227,7 +2346,8 @@ function serializeTask(task) {
     projectId: task.projectId,
     projectName: task.projectName,
     status: task.status,
-    title: task.title
+    title: task.title,
+    updatedAt: task.updatedAt
   };
 }
 function serializeLinkedTask(link) {
@@ -2244,42 +2364,58 @@ function serializeLinkedResource(link) {
   return {
     comment: link.comment,
     name: link.name,
+    readHint: `\u0414\u043B\u044F \u0447\u0442\u0435\u043D\u0438\u044F \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0433\u043E \u0432\u044B\u0437\u043E\u0432\u0438 get_resource \u0441 id "${link.resourceId}".`,
     resourceId: link.resourceId
   };
 }
-function serializePlanSummary(plan, taskId) {
+function serializePlanComment(comment) {
+  return {
+    author: comment.author,
+    content: comment.content,
+    id: comment.id,
+    kind: comment.kind,
+    updatedAt: comment.updatedAt
+  };
+}
+function serializePlanQuestion(question) {
+  return {
+    answer: question.answer,
+    answeredAt: question.answeredAt,
+    content: question.content,
+    id: question.id,
+    updatedAt: question.updatedAt
+  };
+}
+function serializePlanBlock(plan, comments, questions) {
   if (!plan) {
-    return {
-      exists: false,
-      taskId
-    };
+    return { exists: false, contentMd: "", comments: [], questions: [] };
   }
   return {
     exists: true,
+    contentMd: plan.contentMd,
     source: plan.source,
-    taskId
+    updatedAt: plan.updatedAt,
+    comments: comments.map(serializePlanComment),
+    questions: questions.map(serializePlanQuestion)
   };
 }
 function serializePlan(plan, taskId) {
   if (!plan) {
-    return {
-      contentMd: "",
-      exists: false,
-      taskId
-    };
+    return { contentMd: "", exists: false, taskId };
   }
   return {
-    contentMd: renderPlanContent(plan.contentMd),
+    contentMd: plan.contentMd,
     exists: true,
     source: plan.source,
-    taskId
+    taskId,
+    updatedAt: plan.updatedAt
   };
 }
 function serializeTaskDetail(detail) {
   return {
     linkedResources: detail.linkedResources.map(serializeLinkedResource),
     linkedTasks: detail.linkedTasks.map(serializeLinkedTask),
-    plan: serializePlanSummary(detail.plan, detail.task.id),
+    plan: serializePlanBlock(detail.plan, detail.planComments, detail.planQuestions),
     project: serializeProjectSummary(detail.project),
     task: serializeTask(detail.task)
   };
@@ -2288,25 +2424,6 @@ function serializeTaskCollection(tasks, project) {
   return {
     project: project ? serializeProjectSummary(project) : null,
     tasks: tasks.map(serializeTask)
-  };
-}
-function serializePlanComment(comment) {
-  return {
-    author: comment.author,
-    content: comment.content,
-    id: comment.id
-  };
-}
-function serializePlanExtension(taskId, extension) {
-  return {
-    extension: serializePlanComment(extension),
-    taskId
-  };
-}
-function serializePlanImprovement(taskId, improvement) {
-  return {
-    improvement: serializePlanComment(improvement),
-    taskId
   };
 }
 function serializeResource(resource) {
@@ -2320,6 +2437,234 @@ function serializeResourceCollection(resources) {
   return {
     resources: resources.map(serializeResource)
   };
+}
+function serializeTaskSnapshot(snapshot) {
+  return {
+    task: serializeTask(snapshot.task),
+    project: serializeProjectSummary(snapshot.project),
+    plan: serializePlanBlock(snapshot.plan, snapshot.planComments, snapshot.planQuestions),
+    linkedResources: snapshot.linkedResources.map(serializeLinkedResource),
+    linkedTasks: snapshot.linkedTasks.map(serializeLinkedTask)
+  };
+}
+var UNCHANGED = { unchanged: true };
+function serializeDeltaSnapshot(snapshot, since) {
+  const sinceDate = new Date(since).toISOString();
+  const taskUpdated = new Date(snapshot.task.updatedAt).getTime() > since;
+  const task = taskUpdated ? serializeTask(snapshot.task) : UNCHANGED;
+  const planUpdated = snapshot.plan !== null && new Date(snapshot.plan.updatedAt).getTime() > since;
+  const newComments = snapshot.planComments.filter((c) => new Date(c.updatedAt).getTime() > since);
+  const newQuestions = snapshot.planQuestions.filter((q) => new Date(q.updatedAt).getTime() > since);
+  const plan = planUpdated || newComments.length > 0 || newQuestions.length > 0 ? {
+    ...planUpdated && snapshot.plan ? { contentMd: snapshot.plan.contentMd, updatedAt: snapshot.plan.updatedAt } : UNCHANGED,
+    comments: newComments.length > 0 ? newComments.map(serializePlanComment) : UNCHANGED,
+    questions: newQuestions.length > 0 ? newQuestions.map(serializePlanQuestion) : UNCHANGED
+  } : UNCHANGED;
+  const newLinkedResources = snapshot.linkedResources.filter(
+    (r) => new Date(r.createdAt).getTime() > since
+  );
+  const linkedResources = newLinkedResources.length > 0 ? newLinkedResources.map(serializeLinkedResource) : UNCHANGED;
+  const newLinkedTasks = snapshot.linkedTasks.filter(
+    (t) => new Date(t.createdAt).getTime() > since
+  );
+  const linkedTasks = newLinkedTasks.length > 0 ? newLinkedTasks.map(serializeLinkedTask) : UNCHANGED;
+  return { delta: true, since: sinceDate, task, plan, linkedResources, linkedTasks };
+}
+function serializeAgentSession(session) {
+  return {
+    interactionCount: session.interactionCount,
+    lastContextVersion: session.lastContextVersion,
+    lastMode: session.lastMode,
+    lastUsedAt: session.lastUsedAt,
+    runId: session.runId,
+    state: session.state,
+    taskId: session.taskId
+  };
+}
+
+// src/main/mcp/agent-session.ts
+var SESSION_STALE_MS = 100 * 60 * 1e3;
+var SESSION_STALE_INTERACTIONS = 30;
+var SESSION_LOST_MS = 600 * 60 * 1e3;
+function createFreshSession(runId) {
+  return {
+    taskId: null,
+    lastContextVersion: null,
+    state: "fresh",
+    lastUsedAt: Date.now(),
+    interactionCount: 0,
+    lastMode: null,
+    runId
+  };
+}
+function generateRunId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+function touchSession(session, patch) {
+  const now = Date.now();
+  let state = session.state;
+  let interactionCount = session.interactionCount;
+  if (session.lastUsedAt !== null) {
+    const idle = now - session.lastUsedAt;
+    if (idle >= SESSION_LOST_MS) {
+      state = "lost";
+      interactionCount = 0;
+    } else if (idle >= SESSION_STALE_MS) {
+      state = "stale";
+    }
+  }
+  if (state === "fresh" && interactionCount >= SESSION_STALE_INTERACTIONS) {
+    state = "stale";
+  }
+  return {
+    ...session,
+    state,
+    lastUsedAt: now,
+    lastContextVersion: now,
+    interactionCount: interactionCount + 1,
+    taskId: patch.taskId !== void 0 ? patch.taskId : session.taskId,
+    lastMode: patch.mode !== void 0 ? patch.mode : session.lastMode
+  };
+}
+function startWork(session, taskId) {
+  const now = Date.now();
+  return {
+    ...session,
+    taskId,
+    lastContextVersion: now,
+    lastUsedAt: now,
+    lastMode: "work",
+    state: "fresh",
+    interactionCount: session.interactionCount + 1
+  };
+}
+function toDeltaMode(session) {
+  const now = Date.now();
+  return {
+    ...session,
+    lastMode: "delta",
+    lastUsedAt: now,
+    lastContextVersion: now,
+    interactionCount: session.interactionCount + 1
+  };
+}
+
+// src/main/services/task-context.ts
+var TaskContext = class {
+  taskId;
+  appService;
+  _detail = null;
+  _resourceCache = /* @__PURE__ */ new Map();
+  constructor(taskId, appService) {
+    this.taskId = taskId;
+    this.appService = appService;
+  }
+  // ─── Private helpers ────────────────────────────────────────────────────────
+  async detail() {
+    if (!this._detail) {
+      this._detail = await this.appService.getTaskDetail(this.taskId);
+    }
+    return this._detail;
+  }
+  invalidate() {
+    this._detail = null;
+  }
+  // ─── Task ────────────────────────────────────────────────────────────────────
+  async getTask() {
+    return (await this.detail()).task;
+  }
+  async updateStatus(status) {
+    await this.appService.updateTaskStatus({ taskId: this.taskId, status });
+    this.invalidate();
+  }
+  // ─── Plan ────────────────────────────────────────────────────────────────────
+  async getPlan() {
+    return (await this.detail()).plan;
+  }
+  async savePlan(contentMd, openQuestions, source = "agent") {
+    await this.appService.savePlan({ taskId: this.taskId, contentMd, openQuestions, source });
+    this.invalidate();
+  }
+  async appendExtension(content, author = "agent") {
+    await this.appService.appendPlanExtension({ taskId: this.taskId, content, author });
+    this.invalidate();
+  }
+  async appendImprovement(content, author = "agent") {
+    await this.appService.appendPlanImprovement({ taskId: this.taskId, content, author });
+    this.invalidate();
+  }
+  async consolidateDiscussion(contentMd, openQuestions, source = "agent") {
+    await this.appService.consolidatePlanDiscussion({
+      taskId: this.taskId,
+      contentMd,
+      openQuestions,
+      source
+    });
+    this.invalidate();
+  }
+  // ─── Plan comments ────────────────────────────────────────────────────────────
+  async getPlanComments() {
+    return (await this.detail()).planComments;
+  }
+  async getComment(commentId) {
+    const comments = await this.getPlanComments();
+    const item = comments.find((c) => c.id === commentId);
+    if (!item) throw new Error(`\u041A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0439 ${commentId} \u0434\u043B\u044F \u0437\u0430\u0434\u0430\u0447\u0438 ${this.taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
+    return item;
+  }
+  // ─── Plan questions ───────────────────────────────────────────────────────────
+  async getPlanQuestions() {
+    return (await this.detail()).planQuestions;
+  }
+  async getQuestion(questionId) {
+    const questions = await this.getPlanQuestions();
+    const item = questions.find((q) => q.id === questionId);
+    if (!item) throw new Error(`\u0412\u043E\u043F\u0440\u043E\u0441 ${questionId} \u0434\u043B\u044F \u0437\u0430\u0434\u0430\u0447\u0438 ${this.taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
+    return item;
+  }
+  async addQuestion(content) {
+    await this.appService.addPlanQuestion({ taskId: this.taskId, content });
+    this.invalidate();
+  }
+  async answerQuestion(questionId, answer) {
+    await this.appService.answerPlanQuestion({ taskId: this.taskId, questionId, answer });
+    this.invalidate();
+  }
+  // ─── Plan revisions (read, не попадают в MCP snapshot) ───────────────────────
+  async getPlanRevisions() {
+    return (await this.detail()).planRevisions;
+  }
+  // ─── Linked resources (read) ─────────────────────────────────────────────────
+  async getLinkedResources() {
+    return (await this.detail()).linkedResources;
+  }
+  async getResource(resourceId) {
+    if (!this._resourceCache.has(resourceId)) {
+      const resource = await this.appService.getResource(resourceId);
+      this._resourceCache.set(resourceId, resource);
+    }
+    return this._resourceCache.get(resourceId);
+  }
+  // ─── Linked tasks (read) ─────────────────────────────────────────────────────
+  async getLinkedTasks() {
+    return (await this.detail()).linkedTasks;
+  }
+  // ─── Snapshot ────────────────────────────────────────────────────────────────
+  async getSnapshot() {
+    const detail = await this.detail();
+    return {
+      task: detail.task,
+      plan: detail.plan,
+      planComments: detail.planComments,
+      planQuestions: detail.planQuestions,
+      linkedResources: detail.linkedResources,
+      linkedTasks: detail.linkedTasks,
+      project: detail.project
+    };
+  }
+};
+function createTaskContext(taskId, appService) {
+  return new TaskContext(taskId, appService);
 }
 
 // src/main/mcp/create-mcp-server.ts
@@ -2396,6 +2741,10 @@ function createMcpServer(appService, logger) {
     }
   );
   let activeProjectId = null;
+  let agentSession = createFreshSession(generateRunId());
+  function touch(patch) {
+    agentSession = touchSession(agentSession, patch);
+  }
   const requireActiveProject = async () => {
     if (!activeProjectId) {
       throw new Error("\u041F\u0440\u043E\u0435\u043A\u0442 \u043D\u0435 \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D. \u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0437\u043E\u0432\u0438\u0442\u0435 activate_project.");
@@ -2414,10 +2763,9 @@ function createMcpServer(appService, logger) {
     }
     return project;
   };
-  const getScopedTaskDetail = async (taskId) => {
-    const project = await requirePreparedProject();
-    const detail = await appService.getTaskDetail(taskId, project.id);
-    return { detail, project };
+  const requireTaskContext = async (taskId) => {
+    await requirePreparedProject();
+    return createTaskContext(taskId, appService);
   };
   server.registerTool(
     "create_project",
@@ -2492,6 +2840,7 @@ function createMcpServer(appService, logger) {
         throw new Error(`\u041F\u0440\u043E\u0435\u043A\u0442 "${projectRef}" \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
       }
       activeProjectId = resolved.project.id;
+      agentSession = createFreshSession(generateRunId());
       return {
         content: textContent("\u041F\u0440\u043E\u0435\u043A\u0442 \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D."),
         structuredContent: serializeActivatedProject(resolved.project)
@@ -2602,15 +2951,47 @@ function createMcpServer(appService, logger) {
   server.registerTool(
     "get_task",
     {
-      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443 \u0438 \u0435\u0435 \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043F\u043B\u0430\u043D \u043F\u043E taskId \u0431\u0435\u0437 \u0430\u043A\u0442\u0438\u0432\u0430\u0446\u0438\u0438 \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u0443\u044E \u0438\u043D\u0444\u043E\u0440\u043C\u0430\u0446\u0438\u044E \u043E \u0437\u0430\u0434\u0430\u0447\u0435 \u043F\u043E taskId: task, plan (\u0432\u043A\u043B\u044E\u0447\u0430\u044F contentMd \u0438 \u0432\u0441\u0435 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0438), linkedResources, linkedTasks.",
       inputSchema: {
         taskId: z2.string()
       }
     },
     async ({ taskId }) => {
       logger.debug("mcp", "Tool get_task called", { taskId });
-      const detail = await appService.getTaskDetail(taskId);
-      const response = serializeTaskDetail(detail);
+      const ctx = createTaskContext(taskId, appService);
+      const snapshot = await ctx.getSnapshot();
+      const response = serializeTaskSnapshot(snapshot);
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
+      };
+    }
+  );
+  server.registerTool(
+    "sync_task",
+    {
+      description: "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443 \u0441 \u0441\u0435\u0441\u0441\u0438\u0435\u0439. \u041F\u0435\u0440\u0432\u044B\u0439 \u0432\u044B\u0437\u043E\u0432 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u043F\u043E\u043B\u043D\u044B\u0439 \u0441\u043D\u0430\u043F\u0448\u043E\u0442 \u0438 \u043F\u0435\u0440\u0435\u0432\u043E\u0434\u0438\u0442 \u0441\u0435\u0441\u0441\u0438\u044E \u0432 work-\u0440\u0435\u0436\u0438\u043C. \u041F\u043E\u0432\u0442\u043E\u0440\u043D\u044B\u0435 \u0432\u044B\u0437\u043E\u0432\u044B \u0432 \u0440\u0430\u043C\u043A\u0430\u0445 \u0442\u043E\u0439 \u0436\u0435 \u0441\u0435\u0441\u0441\u0438\u0438 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u044E\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0441 \u043C\u043E\u043C\u0435\u043D\u0442\u0430 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u0432\u044B\u0437\u043E\u0432\u0430 (delta-\u0440\u0435\u0436\u0438\u043C). \u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+      inputSchema: {
+        taskId: z2.string()
+      }
+    },
+    async ({ taskId }) => {
+      logger.debug("mcp", "Tool sync_task called", { taskId, mode: agentSession.lastMode, sessionTaskId: agentSession.taskId });
+      const ctx = await requireTaskContext(taskId);
+      const isDelta = agentSession.lastMode !== null && agentSession.taskId === taskId && agentSession.lastContextVersion !== null;
+      if (isDelta) {
+        const since = agentSession.lastContextVersion;
+        const snapshot2 = await ctx.getSnapshot();
+        agentSession = toDeltaMode(agentSession);
+        const response2 = serializeDeltaSnapshot(snapshot2, since);
+        return {
+          content: textContent(JSON.stringify(response2, null, 2)),
+          structuredContent: response2
+        };
+      }
+      const snapshot = await ctx.getSnapshot();
+      agentSession = startWork(agentSession, taskId);
+      const response = serializeTaskSnapshot(snapshot);
       return {
         content: textContent(JSON.stringify(response, null, 2)),
         structuredContent: response
@@ -2627,79 +3008,59 @@ function createMcpServer(appService, logger) {
       }
     },
     async ({ status, taskId }) => {
-      await getScopedTaskDetail(taskId);
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
       logger.info("mcp", "Tool update_task_status called", { taskId, status });
-      const detail = await appService.updateTaskStatus({ taskId, status });
+      await ctx.updateStatus(status);
+      const snapshot = await ctx.getSnapshot();
       return {
         content: textContent(`\u0421\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u0434\u0430\u0447\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D \u043D\u0430 ${status}.`),
-        structuredContent: serializeTaskDetail(detail)
+        structuredContent: serializeTaskSnapshot(snapshot)
       };
     }
   );
   server.registerTool(
-    "get_plan",
+    "answer_plan_question",
     {
-      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 Markdown-\u043F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043C\u0435\u0441\u0442\u0435 \u0441 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F\u043C\u0438 \u0438 \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430\u043C\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
-      inputSchema: {
-        taskId: z2.string()
-      }
-    },
-    async ({ taskId }) => {
-      logger.debug("mcp", "Tool get_plan called", { taskId });
-      const { detail } = await getScopedTaskDetail(taskId);
-      return {
-        content: textContent(detail.plan ? parseManagedPlanContent(detail.plan.contentMd).renderedContentMd : ""),
-        structuredContent: serializePlan(detail.plan, taskId)
-      };
-    }
-  );
-  server.registerTool(
-    "get_plan_extension",
-    {
-      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043E\u0434\u043D\u043E \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E\u0435 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u043F\u043B\u0430\u043D\u0430 \u043F\u043E extensionId \u0431\u0435\u0437 \u0447\u0442\u0435\u043D\u0438\u044F \u0432\u0441\u0435\u0433\u043E \u043F\u043B\u0430\u043D\u0430.",
+      description: "\u041E\u0442\u0432\u0435\u0442\u0438\u0442\u044C \u043D\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0439 \u0432\u043E\u043F\u0440\u043E\u0441 \u043F\u043B\u0430\u043D\u0430 \u043F\u043E questionId. \u041E\u0442\u0432\u0435\u0442 \u043F\u0435\u0440\u0435\u043D\u043E\u0441\u0438\u0442\u0441\u044F \u0432 discussion, \u0432\u043E\u043F\u0440\u043E\u0441 \u0443\u0434\u0430\u043B\u044F\u0435\u0442\u0441\u044F \u0438\u0437 \u0441\u043F\u0438\u0441\u043A\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0445.",
       inputSchema: {
         taskId: z2.string(),
-        extensionId: z2.string().min(1)
+        questionId: z2.string().min(1),
+        answer: z2.string().min(1)
       }
     },
-    async ({ extensionId, taskId }) => {
-      logger.debug("mcp", "Tool get_plan_extension called", { taskId, extensionId });
-      const { detail } = await getScopedTaskDetail(taskId);
-      if (!detail.plan) {
-        throw new Error(`\u041F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 ${taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
-      }
-      const extension = findManagedPlanComment(detail.plan.contentMd, "extension", extensionId);
-      if (!extension) {
-        throw new Error(`\u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 ${extensionId} \u0434\u043B\u044F \u0437\u0430\u0434\u0430\u0447\u0438 ${taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E.`);
-      }
+    async ({ answer, questionId, taskId }) => {
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
+      logger.info("mcp", "Tool answer_plan_question called", { questionId, taskId });
+      await ctx.answerQuestion(questionId, answer);
+      const snapshot = await ctx.getSnapshot();
       return {
-        content: textContent(extension.content),
-        structuredContent: serializePlanExtension(taskId, extension)
+        content: textContent("\u041E\u0442\u0432\u0435\u0442 \u043D\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0439 \u0432\u043E\u043F\u0440\u043E\u0441 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D."),
+        structuredContent: serializeTaskSnapshot(snapshot)
       };
     }
   );
   server.registerTool(
-    "get_plan_improvement",
+    "add_plan_questions",
     {
-      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043E\u0434\u043D\u0443 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u0443\u044E \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0443 \u043F\u043B\u0430\u043D\u0430 \u043F\u043E improvementId \u0431\u0435\u0437 \u0447\u0442\u0435\u043D\u0438\u044F \u0432\u0441\u0435\u0433\u043E \u043F\u043B\u0430\u043D\u0430.",
+      description: "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043E\u0434\u0438\u043D \u0438\u043B\u0438 \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0445 \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u043A \u0437\u0430\u0434\u0430\u0447\u0435 \u0431\u0435\u0437 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u043F\u043B\u0430\u043D\u0430. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u043A\u043E\u0433\u0434\u0430 \u043D\u0443\u0436\u043D\u043E \u0443\u0442\u043E\u0447\u043D\u0438\u0442\u044C \u0442\u0440\u0435\u0431\u043E\u0432\u0430\u043D\u0438\u044F \u0443 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F.",
       inputSchema: {
         taskId: z2.string(),
-        improvementId: z2.string().min(1)
+        questions: z2.array(z2.string().min(1)).min(1)
       }
     },
-    async ({ improvementId, taskId }) => {
-      logger.debug("mcp", "Tool get_plan_improvement called", { taskId, improvementId });
-      const { detail } = await getScopedTaskDetail(taskId);
-      if (!detail.plan) {
-        throw new Error(`\u041F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 ${taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
+    async ({ questions, taskId }) => {
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
+      logger.info("mcp", "Tool add_plan_questions called", { taskId, count: questions.length });
+      for (const content of questions) {
+        await ctx.addQuestion(content);
       }
-      const improvement = findManagedPlanComment(detail.plan.contentMd, "improvement", improvementId);
-      if (!improvement) {
-        throw new Error(`\u0414\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430 ${improvementId} \u0434\u043B\u044F \u0437\u0430\u0434\u0430\u0447\u0438 ${taskId} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430.`);
-      }
+      const snapshot = await ctx.getSnapshot();
       return {
-        content: textContent(improvement.content),
-        structuredContent: serializePlanImprovement(taskId, improvement)
+        content: textContent(`\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432: ${questions.length}.`),
+        structuredContent: serializeTaskSnapshot(snapshot)
       };
     }
   );
@@ -2710,26 +3071,21 @@ function createMcpServer(appService, logger) {
       inputSchema: {
         taskId: z2.string(),
         contentMd: z2.string().min(1),
-        openQuestions: z2.array(z2.string().min(1)).optional(),
-        source: z2.enum(["human", "agent"]).optional()
+        openQuestions: z2.array(z2.string().min(1)).optional()
       }
     },
-    async ({ contentMd, openQuestions, source, taskId }) => {
-      await getScopedTaskDetail(taskId);
+    async ({ contentMd, openQuestions, taskId }) => {
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
       logger.info("mcp", "Tool save_plan called", {
         taskId,
-        openQuestionsCount: openQuestions?.length ?? 0,
-        source: source ?? "agent"
+        openQuestionsCount: openQuestions?.length ?? 0
       });
-      const detail = await appService.savePlan({
-        taskId,
-        contentMd,
-        openQuestions,
-        source: source ?? "agent"
-      });
+      await ctx.savePlan(contentMd, openQuestions, "agent");
+      const plan = await ctx.getPlan();
       return {
         content: textContent("\u041F\u043B\u0430\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D."),
-        structuredContent: serializePlan(detail.plan, taskId)
+        structuredContent: serializePlan(plan, taskId)
       };
     }
   );
@@ -2743,12 +3099,14 @@ function createMcpServer(appService, logger) {
       }
     },
     async ({ content, taskId }) => {
-      await getScopedTaskDetail(taskId);
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
       logger.info("mcp", "Tool append_plan_extension called", { taskId });
-      const detail = await appService.appendPlanExtension({ taskId, content, author: "agent" });
+      await ctx.appendExtension(content);
+      const plan = await ctx.getPlan();
       return {
         content: textContent("\u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u043F\u043B\u0430\u043D\u0430 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E."),
-        structuredContent: serializePlan(detail.plan, taskId)
+        structuredContent: serializePlan(plan, taskId)
       };
     }
   );
@@ -2762,12 +3120,14 @@ function createMcpServer(appService, logger) {
       }
     },
     async ({ content, taskId }) => {
-      await getScopedTaskDetail(taskId);
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
       logger.info("mcp", "Tool append_plan_improvement called", { taskId });
-      const detail = await appService.appendPlanImprovement({ taskId, content, author: "agent" });
+      await ctx.appendImprovement(content);
+      const plan = await ctx.getPlan();
       return {
         content: textContent("\u0414\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430 \u043F\u043B\u0430\u043D\u0430 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0430."),
-        structuredContent: serializePlan(detail.plan, taskId)
+        structuredContent: serializePlan(plan, taskId)
       };
     }
   );
@@ -2778,26 +3138,35 @@ function createMcpServer(appService, logger) {
       inputSchema: {
         taskId: z2.string(),
         contentMd: z2.string().min(1),
-        openQuestions: z2.array(z2.string().min(1)).optional(),
-        source: z2.enum(["human", "agent"]).optional()
+        openQuestions: z2.array(z2.string().min(1)).optional()
       }
     },
-    async ({ contentMd, openQuestions, source, taskId }) => {
-      await getScopedTaskDetail(taskId);
+    async ({ contentMd, openQuestions, taskId }) => {
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
       logger.info("mcp", "Tool consolidate_plan_discussion called", {
         taskId,
-        openQuestionsCount: openQuestions?.length ?? 0,
-        source: source ?? "agent"
+        openQuestionsCount: openQuestions?.length ?? 0
       });
-      const detail = await appService.consolidatePlanDiscussion({
-        taskId,
-        contentMd,
-        openQuestions,
-        source: source ?? "agent"
-      });
+      await ctx.consolidateDiscussion(contentMd, openQuestions, "agent");
+      const plan = await ctx.getPlan();
       return {
         content: textContent("\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430 \u043F\u043E \u043F\u043B\u0430\u043D\u0443 \u0441\u0436\u0430\u0442\u0430 \u0432 \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043F\u043B\u0430\u043D \u0438 \u043E\u0447\u0438\u0449\u0435\u043D\u0430 \u0438\u0437 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0445 \u0431\u043B\u043E\u043A\u043E\u0432."),
-        structuredContent: serializePlan(detail.plan, taskId)
+        structuredContent: serializePlan(plan, taskId)
+      };
+    }
+  );
+  server.registerTool(
+    "get_session_state",
+    {
+      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0435\u0435 \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 MCP-\u0441\u0435\u0441\u0441\u0438\u0438: \u043D\u0430\u0434 \u043A\u0430\u043A\u043E\u0439 \u0437\u0430\u0434\u0430\u0447\u0435\u0439 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0430\u0433\u0435\u043D\u0442, \u043D\u0430\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0441\u0432\u0435\u0436 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0438 \u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0448\u0430\u0433\u043E\u0432 \u0443\u0436\u0435 \u0441\u0434\u0435\u043B\u0430\u043D\u043E. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u043F\u0435\u0440\u0435\u0434 \u043D\u0430\u0447\u0430\u043B\u043E\u043C \u0440\u0430\u0431\u043E\u0442\u044B \u0441 \u0437\u0430\u0434\u0430\u0447\u0435\u0439, \u0447\u0442\u043E\u0431\u044B \u043F\u043E\u043D\u044F\u0442\u044C, \u043D\u0443\u0436\u043D\u043E \u043B\u0438 \u043F\u0435\u0440\u0435\u0447\u0438\u0442\u044B\u0432\u0430\u0442\u044C \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442."
+    },
+    async () => {
+      logger.debug("mcp", "Tool get_session_state called");
+      const response = serializeAgentSession(agentSession);
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -2910,23 +3279,7 @@ function createMcpServer(appService, logger) {
           role: "user",
           content: {
             type: "text",
-            text: `\u0412\u044B\u043F\u043E\u043B\u043D\u0438 planning \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 AITasker \u0447\u0435\u0440\u0435\u0437 MCP.
-
-\u0412\u0445\u043E\u0434:
-{
-  "mcp": "aitasker",
-  "action": "plan_task",
-  "projectRef": "${projectRef}",
-  "taskRef": "${taskRef}",
-  "read": ["get_active_project", "get_task", "get_plan"],
-  "write": ["save_plan", "update_task_status"],
-  "statusFlow": ["planning", "implementation"],
-  "rules": ["resolve_project", "resolve_task", "save_open_questions_separately"]
-}
-
-\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${instructions?.trim() || "none"}
-
-\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442 \u0432 AITasker \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`
+            text: buildRegisteredPromptMessage("plan_task", { instructions, projectRef, taskRef })
           }
         }
       ]
@@ -2948,22 +3301,7 @@ function createMcpServer(appService, logger) {
           role: "user",
           content: {
             type: "text",
-            text: `\u0421\u043E\u0436\u043C\u0438 \u043E\u0431\u0441\u0443\u0436\u0434\u0435\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 AITasker \u043E\u0431\u0440\u0430\u0442\u043D\u043E \u0432 \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0439 \u043F\u043B\u0430\u043D \u0447\u0435\u0440\u0435\u0437 MCP.
-
-\u0412\u0445\u043E\u0434:
-{
-  "mcp": "aitasker",
-  "action": "consolidate_plan_discussion",
-  "projectRef": "${projectRef}",
-  "taskRef": "${taskRef}",
-  "read": ["get_task", "get_plan"],
-  "write": ["consolidate_plan_discussion"],
-  "rules": ["resolve_project", "resolve_task", "merge_discussion_into_plan", "save_open_questions_separately"]
-}
-
-\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${instructions?.trim() || "none"}
-
-\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`
+            text: buildRegisteredPromptMessage("compress_plan_discussion", { instructions, projectRef, taskRef })
           }
         }
       ]
@@ -2985,22 +3323,7 @@ function createMcpServer(appService, logger) {
           role: "user",
           content: {
             type: "text",
-            text: `\u041F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u044C \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u0438 SKILL.md \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0432 AITasker.
-
-\u0412\u0445\u043E\u0434:
-{
-  "mcp": "aitasker",
-  "action": "sync_project_skill",
-  "projectRef": "${projectRef}",
-  "skillPath": "${skillPath?.trim() || ""}",
-  "read": ["get_active_project"],
-  "write": ["update_project_profile"],
-  "rules": ["resolve_project", "determine_skill_path", "create_or_update_skill_file", "sync_skill_path_to_project_profile"]
-}
-
-\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${instructions?.trim() || "none"}
-
-\u0415\u0441\u043B\u0438 \u043F\u0443\u0442\u044C \u043D\u0435\u043B\u044C\u0437\u044F \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u044C \u043D\u0430\u0434\u0435\u0436\u043D\u043E, \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0441\u044C \u0438 \u0437\u0430\u043F\u0440\u043E\u0441\u0438 \u0435\u0433\u043E \u0443 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F.`
+            text: buildRegisteredPromptMessage("create_project_skill", { instructions, projectRef, skillPath })
           }
         }
       ]
@@ -3013,13 +3336,14 @@ function createMcpServer(appService, logger) {
       description: "JSON \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u0437 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430"
     },
     async (uri, variables) => {
-      const { detail } = await getScopedTaskDetail(String(variables.id));
+      const ctx = await requireTaskContext(String(variables.id));
+      const task = await ctx.getTask();
       return {
         contents: [
           {
             uri: uri.href,
             mimeType: "application/json",
-            text: JSON.stringify(serializeTask(detail.task), null, 2)
+            text: JSON.stringify(serializeTask(task), null, 2)
           }
         ]
       };
@@ -3032,13 +3356,14 @@ function createMcpServer(appService, logger) {
       description: "Markdown-\u043F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u0437 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430"
     },
     async (uri, variables) => {
-      const { detail } = await getScopedTaskDetail(String(variables.taskId));
+      const ctx = await requireTaskContext(String(variables.taskId));
+      const plan = await ctx.getPlan();
       return {
         contents: [
           {
             uri: uri.href,
             mimeType: "text/markdown",
-            text: detail.plan ? parseManagedPlanContent(detail.plan.contentMd).renderedContentMd : ""
+            text: plan?.contentMd ?? ""
           }
         ]
       };
@@ -3169,7 +3494,7 @@ var McpHttpServer = class {
     if (!sessionId && isInitializeRequest(body)) {
       const server = createMcpServer(this.appService, this.logger);
       const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID8(),
+        sessionIdGenerator: () => randomUUID9(),
         enableJsonResponse: true
       });
       transport.onclose = () => {
@@ -3385,6 +3710,7 @@ function bootstrapMainProcess(runtime) {
     const taskRepository = new TaskRepository(databaseContext.database);
     const taskLinkRepository = new TaskLinkRepository(databaseContext.database);
     const planRepository = new PlanRepository(databaseContext.database);
+    const planCommentRepository = new PlanCommentRepository(databaseContext.database);
     const projectRepository = new ProjectRepository(databaseContext.database);
     const promptOverrideRepository = new PromptOverrideRepository(databaseContext.database);
     const agentSessionRepository = new AgentSessionRepository(databaseContext.database);
@@ -3421,6 +3747,7 @@ function bootstrapMainProcess(runtime) {
         }
         void sendTaskNotification(event, () => mainWindow, appService.getTaskDetail.bind(appService));
       },
+      planCommentRepository,
       planRepository,
       platform: process.platform,
       projectRepository,

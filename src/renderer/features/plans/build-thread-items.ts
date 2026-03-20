@@ -2,25 +2,24 @@
 Назначение: Собирает хронологический тред из разных типов элементов плана — одиночных комментариев и пар вопрос-ответ.
 Не входит: Рендеринг, хранение данных, мутации.
 */
-import type { ManagedPlanComment, ManagedPlanContent } from "@/shared/plans/managed-plan-content";
+import type { PlanCommentRecord, PlanQuestionRecord } from "@/shared/contracts/desktop-api";
 
 export type CommentKind = "extension" | "improvement";
 export type ThreadKind = CommentKind | "discussion";
 
-/** Одиночный комментарий (расширение, доработка или произвольное сообщение в обсуждении). */
+/** Одиночный комментарий (расширение или доработка). */
 export interface ThreadSingleComment {
   type: "comment";
-  comment: ManagedPlanComment;
-  kind: ThreadKind;
+  comment: PlanCommentRecord;
+  kind: CommentKind;
   /** Timestamp для хронологической сортировки. */
   sortKey: number;
 }
 
-/** Пара «Вопрос агента + Ответ пользователя» из раздела discussion. */
+/** Пара «Вопрос агента + Ответ пользователя». */
 export interface ThreadQAPair {
   type: "qa-pair";
-  question: ManagedPlanComment;
-  answer: ManagedPlanComment;
+  question: PlanQuestionRecord;
   kind: "discussion";
   sortKey: number;
 }
@@ -34,73 +33,30 @@ function toSortKey(createdAt: string | null): number {
 }
 
 /**
- * Определяет, является ли комментарий записью «Вопрос» (author=agent, content начинается с «**Вопрос:**»).
+ * Собирает все элементы треда из комментариев и вопросов в хронологическом порядке.
+ * Вопросы (с ответом или без) — ThreadQAPair.
+ * Комментарии (extension/improvement) — ThreadSingleComment.
  */
-function isQuestionComment(comment: ManagedPlanComment): boolean {
-  return comment.author === "agent" && comment.content.startsWith("**Вопрос:**");
-}
-
-/**
- * Определяет, является ли комментарий записью «Ответ» (author=human, content начинается с «**Ответ:**»).
- */
-function isAnswerComment(comment: ManagedPlanComment): boolean {
-  return comment.author === "human" && comment.content.startsWith("**Ответ:**");
-}
-
-/**
- * Собирает все элементы треда из разобранного плана в хронологическом порядке.
- * Записи из discussion с паттерном «Вопрос + следующий Ответ» группируются в ThreadQAPair.
- * Все остальные записи (extensions, improvements, одиночные discussion) остаются ThreadSingleComment.
- *
- * Функция расширяема: добавление новых видов ThreadItem требует только изменения этой функции.
- */
-export function buildThreadItems(parsed: ManagedPlanContent): ThreadItem[] {
+export function buildThreadItems(
+  comments: PlanCommentRecord[],
+  questions: PlanQuestionRecord[]
+): ThreadItem[] {
   const items: ThreadItem[] = [];
 
-  // Группируем discussion: ищем последовательные пары Вопрос→Ответ
-  const discussion = parsed.discussion;
-  let i = 0;
-  while (i < discussion.length) {
-    const current = discussion[i];
-    const next = discussion[i + 1];
-
-    if (current && isQuestionComment(current) && next && isAnswerComment(next)) {
-      items.push({
-        type: "qa-pair",
-        question: current,
-        answer: next,
-        kind: "discussion",
-        sortKey: toSortKey(current.createdAt),
-      });
-      i += 2;
-    } else if (current) {
-      items.push({
-        type: "comment",
-        comment: current,
-        kind: "discussion",
-        sortKey: toSortKey(current.createdAt),
-      });
-      i += 1;
-    } else {
-      i += 1;
-    }
-  }
-
-  // Добавляем расширения и доработки как одиночные комментарии
-  for (const comment of parsed.extensions) {
+  for (const question of questions) {
     items.push({
-      type: "comment",
-      comment,
-      kind: "extension",
-      sortKey: toSortKey(comment.createdAt),
+      type: "qa-pair",
+      question,
+      kind: "discussion",
+      sortKey: toSortKey(question.createdAt),
     });
   }
 
-  for (const comment of parsed.improvements) {
+  for (const comment of comments) {
     items.push({
       type: "comment",
       comment,
-      kind: "improvement",
+      kind: comment.kind as CommentKind,
       sortKey: toSortKey(comment.createdAt),
     });
   }

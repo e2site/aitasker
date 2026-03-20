@@ -13,7 +13,6 @@ import { McpPromptShortcuts } from "@/renderer/components/mcp-prompt-shortcuts";
 import { SearchBar } from "@/renderer/components/search-bar";
 import { TaskPlanWorkspace } from "@/renderer/components/task-plan-workspace";
 import type { TaskDetail, TaskStatus } from "@/shared/contracts/desktop-api";
-import { parseManagedPlanContent } from "@/shared/plans/managed-plan-content";
 import { getTaskStatusMeta, TASK_STATUS_LIST } from "@/renderer/features/tasks/task-status-meta";
 import { useTextSearch } from "@/renderer/features/tasks/use-text-search";
 import {
@@ -136,7 +135,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   const search = useTextSearch();
 
   useEffect(() => {
-    setDraftPlan(props.detail?.plan ? parseManagedPlanContent(props.detail.plan.contentMd).baseContentMd : "");
+    setDraftPlan(props.detail?.plan?.contentMd ?? "");
     setActiveTab("plan");
     setEditingTitle(false);
     setEditingDescription(false);
@@ -188,7 +187,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   }
 
   const detail = props.detail;
-  const openQuestionsCount = detail.plan ? parseManagedPlanContent(detail.plan.contentMd).questions.length : 0;
+  const openQuestionsCount = detail.planQuestions.filter((q) => !q.answeredAt).length;
   const hasOpenQuestions = openQuestionsCount > 0;
   const busy =
     props.isDeletingTask || props.isSavingPlan || props.isUpdatingStatus || props.isRestoringRevision;

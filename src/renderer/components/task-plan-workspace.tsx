@@ -11,11 +11,7 @@ import { openPlanRevisionWindow } from "@/renderer/components/plan-revision-wind
 import { Button } from "@/renderer/components/ui/button";
 import { MarkdownPlanEditor } from "@/renderer/editors/markdown-plan-editor";
 import { MilkdownEditor } from "@/renderer/editors/milkdown-editor";
-import {
-  parseManagedPlanContent,
-  type ManagedPlanComment,
-  type ManagedPlanQuestion
-} from "@/shared/plans/managed-plan-content";
+import type { PlanCommentRecord, PlanQuestionRecord } from "@/shared/contracts/desktop-api";
 import {
   buildThreadItems,
   type CommentKind,
@@ -100,8 +96,7 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
   const planRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const revisions = props.detail.planRevisions;
-  const parsedPlan = parseManagedPlanContent(props.detail.plan?.contentMd ?? "");
-  const dirty = props.draftPlan !== parsedPlan.baseContentMd;
+  const dirty = props.draftPlan !== (props.detail.plan?.contentMd ?? "");
 
   const sq = props.searchQuery ?? "";
   const isBusy =
@@ -110,8 +105,9 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
     props.isAppendingPlanImprovement ||
     props.isAnsweringPlanQuestion;
 
-  // Единый хронологический тред с группировкой пар вопрос-ответ
-  const threadItems = buildThreadItems(parsedPlan);
+  // Единый хронологический тред
+  const openQuestions = props.detail.planQuestions.filter((q) => !q.answeredAt);
+  const threadItems = buildThreadItems(props.detail.planComments, props.detail.planQuestions);
 
   useEffect(() => {
     setSelectedRevisionId("");
@@ -196,7 +192,7 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
               variant="outline"
               disabled={props.isDeletingTask || props.isRestoringRevision}
               onClick={() => {
-                props.onChangeDraftPlan(parsedPlan.baseContentMd);
+                props.onChangeDraftPlan(props.detail.plan?.contentMd ?? "");
                 props.onSetEditorMode("view");
               }}
             >
@@ -264,7 +260,7 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
               {/* Базовый план */}
               <div ref={planRef} className="relative">
                 <MarkdownPlanViewer
-                  contentMd={parsedPlan.baseContentMd}
+                  contentMd={props.detail.plan?.contentMd ?? ""}
                   searchQuery={sq || undefined}
                 />
                 {selectionPopover && (
@@ -321,9 +317,9 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
                   )}
                 </div>
 
-                {parsedPlan.questions.length > 0 ? (
+                {openQuestions.length > 0 ? (
                   <div className="mb-4 space-y-3">
-                    {parsedPlan.questions.map((question) => (
+                    {openQuestions.map((question) => (
                       <QuestionCard
                         key={question.id}
                         answerValue={questionAnswers[question.id] ?? ""}
@@ -355,7 +351,7 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
 
                 {/* Тред сообщений */}
                 <div className="space-y-5">
-                  {threadItems.length === 0 && parsedPlan.questions.length === 0 ? (
+                  {threadItems.length === 0 && openQuestions.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
                       Обсуждений пока нет.
                     </div>
@@ -366,7 +362,6 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
                           <QAPairCard
                             key={item.question.id}
                             question={item.question}
-                            answer={item.answer}
                             searchQuery={sq || undefined}
                           />
                         );
@@ -527,7 +522,7 @@ interface QuestionCardProps {
   isBusy: boolean;
   onChangeAnswer(value: string): void;
   onSubmit(): void;
-  question: ManagedPlanQuestion;
+  question: PlanQuestionRecord;
 }
 
 function QuestionCard(props: QuestionCardProps) {
@@ -557,12 +552,11 @@ function QuestionCard(props: QuestionCardProps) {
 }
 
 interface QAPairCardProps {
-  question: ManagedPlanComment;
-  answer: ManagedPlanComment;
+  question: PlanQuestionRecord;
   searchQuery?: string;
 }
 
-function QAPairCard({ question, answer, searchQuery }: QAPairCardProps) {
+function QAPairCard({ question, searchQuery }: QAPairCardProps) {
   return (
     <div className="flex flex-col gap-3">
       {/* Вопрос AI — слева */}
@@ -585,26 +579,28 @@ function QAPairCard({ question, answer, searchQuery }: QAPairCardProps) {
           </div>
         </article>
       </div>
-      {/* Ответ пользователя — справа */}
-      <div className="flex justify-end">
-        <article className="plan-thread-message plan-thread-message--human w-full max-w-[85%]">
-          <div className="plan-thread-message__meta">
-            <div className="flex items-center gap-2">
-              <span className="plan-thread-message__author">Вы</span>
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES.discussion}`}>
-                ответ
-              </span>
+      {/* Ответ пользователя — справа (если есть) */}
+      {question.answer ? (
+        <div className="flex justify-end">
+          <article className="plan-thread-message plan-thread-message--human w-full max-w-[85%]">
+            <div className="plan-thread-message__meta">
+              <div className="flex items-center gap-2">
+                <span className="plan-thread-message__author">Вы</span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES.discussion}`}>
+                  ответ
+                </span>
+              </div>
+              <span className="text-xs text-slate-400">{formatCommentDate(question.answeredAt)}</span>
             </div>
-            <span className="text-xs text-slate-400">{formatCommentDate(answer.createdAt)}</span>
-          </div>
-          <div className="plan-thread-message__body">
-            <MarkdownPlanViewer
-              contentMd={answer.content}
-              searchQuery={searchQuery}
-            />
-          </div>
-        </article>
-      </div>
+            <div className="plan-thread-message__body">
+              <MarkdownPlanViewer
+                contentMd={question.answer}
+                searchQuery={searchQuery}
+              />
+            </div>
+          </article>
+        </div>
+      ) : null}
     </div>
   );
 }

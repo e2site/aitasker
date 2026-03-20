@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { Check, ClipboardCopy, FolderOpen, Pencil, X } from "lucide-react";
 import type { ProjectRecord, UpdateProjectProfileInput } from "@/shared/contracts/desktop-api";
+import { buildProjectActivationCopyPrompt } from "@/renderer/components/mcp-prompt-presets";
 import { Button } from "@/renderer/components/ui/button";
 import { Input } from "@/renderer/components/ui/input";
 import { Label } from "@/renderer/components/ui/label";
@@ -57,13 +58,7 @@ export function ProjectCard({ project, isUpdating, onSave }: ProjectCardProps) {
   }
 
   function handleCopyPrompt() {
-    const prompt = [
-      `Активируй проект "${project.name}" (ID: ${project.id}).`,
-      `Путь: ${project.rootPath ?? "не указан"}.`,
-      `Описание: ${project.description || "нет"}.`,
-      `Языки: ${project.languages.join(", ") || "нет"}.`,
-      `Заполни карточку проекта через update_project_profile.`
-    ].join("\n");
+    const prompt = buildProjectActivationCopyPrompt(project);
 
     void navigator.clipboard.writeText(prompt).then(() => {
       setCopied(true);

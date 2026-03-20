@@ -107,6 +107,32 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
       comment TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS plan_comments (
+      id TEXT PRIMARY KEY NOT NULL,
+      plan_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      author TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS plan_questions (
+      id TEXT PRIMARY KEY NOT NULL,
+      plan_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      answer TEXT,
+      answered_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
   `);
 
   if (!hasColumn(sqlite, "tasks", "project_id")) {
@@ -210,5 +236,9 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_task_links_target_task_id ON task_links(target_task_id);
     CREATE INDEX IF NOT EXISTS idx_task_resources_task_id ON task_resources(task_id);
     CREATE INDEX IF NOT EXISTS idx_task_resources_resource_id ON task_resources(resource_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_comments_task_id ON plan_comments(task_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_comments_plan_id ON plan_comments(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_questions_task_id ON plan_questions(task_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_questions_plan_id ON plan_questions(plan_id);
   `);
 }

@@ -2,17 +2,17 @@
 Назначение: Формирует компактные внешние ответы MCP из внутренних доменных моделей приложения.
 Не входит: Регистрация MCP-инструментов, бизнес-логика сервисов и desktop-контракты renderer.
 */
-import { parseManagedPlanContent, type ManagedPlanComment } from "../../shared/plans/managed-plan-content";
 import type { AppService } from "../services/app-service";
+import type { AgentSession } from "./agent-session";
+import type { TaskContextSnapshot } from "../services/task-context";
+import type { PlanCommentRecord, PlanQuestionRecord } from "../../shared/contracts/desktop-api";
+
+export type { AgentSession };
 
 type ProjectRecord = Awaited<ReturnType<AppService["listProjects"]>>[number];
 type ResourceRecord = Awaited<ReturnType<AppService["listResources"]>>[number];
 type TaskDetail = Awaited<ReturnType<AppService["getTaskDetail"]>>;
 type TaskRecord = Awaited<ReturnType<AppService["listTasks"]>>[number];
-
-function renderPlanContent(contentMd: string): string {
-  return parseManagedPlanContent(contentMd).renderedContentMd;
-}
 
 function serializeProjectSummary(project: ProjectRecord) {
   return {
@@ -55,7 +55,8 @@ export function serializeTask(task: TaskRecord) {
     projectId: task.projectId,
     projectName: task.projectName,
     status: task.status,
-    title: task.title
+    title: task.title,
+    updatedAt: task.updatedAt
   };
 }
 
@@ -79,54 +80,65 @@ function serializeLinkedResource(link: TaskDetail["linkedResources"][number]) {
   };
 }
 
-function serializePlanSummary(plan: TaskDetail["plan"], taskId: string) {
+function serializePlanComment(comment: PlanCommentRecord) {
+  return {
+    author: comment.author,
+    content: comment.content,
+    id: comment.id,
+    kind: comment.kind,
+    updatedAt: comment.updatedAt
+  };
+}
+
+function serializePlanQuestion(question: PlanQuestionRecord) {
+  return {
+    answer: question.answer,
+    answeredAt: question.answeredAt,
+    content: question.content,
+    id: question.id,
+    updatedAt: question.updatedAt
+  };
+}
+
+function serializePlanBlock(
+  plan: TaskDetail["plan"],
+  comments: PlanCommentRecord[],
+  questions: PlanQuestionRecord[]
+) {
   if (!plan) {
-    return {
-      exists: false,
-      taskId
-    };
+    return { exists: false, contentMd: "", comments: [], questions: [] };
   }
 
   return {
     exists: true,
+    contentMd: plan.contentMd,
     source: plan.source,
-    taskId
+    updatedAt: plan.updatedAt,
+    comments: comments.map(serializePlanComment),
+    questions: questions.map(serializePlanQuestion)
   };
 }
 
 export function serializePlan(plan: TaskDetail["plan"], taskId: string) {
   if (!plan) {
-    return {
-      contentMd: "",
-      exists: false,
-      taskId
-    };
+    return { contentMd: "", exists: false, taskId };
   }
 
   return {
-    contentMd: renderPlanContent(plan.contentMd),
+    contentMd: plan.contentMd,
     exists: true,
     source: plan.source,
-    taskId
+    taskId,
+    updatedAt: plan.updatedAt
   };
 }
 
 export function serializeTaskDetail(detail: TaskDetail) {
-  const linkedResources = detail.linkedResources.map(serializeLinkedResource);
-
   return {
-    linkedResources,
+    linkedResources: detail.linkedResources.map(serializeLinkedResource),
     linkedTasks: detail.linkedTasks.map(serializeLinkedTask),
-    plan: serializePlanSummary(detail.plan, detail.task.id),
+    plan: serializePlanBlock(detail.plan, detail.planComments, detail.planQuestions),
     project: serializeProjectSummary(detail.project),
-    resourceReadme: {
-      hasLinkedResources: linkedResources.length > 0,
-      readTool: "get_resource",
-      recommendedAction:
-        linkedResources.length > 0
-          ? "После get_task прочитай связанные ресурсы через get_resource, если они нужны для планирования или реализации."
-          : "У задачи нет связанных ресурсов."
-    },
     task: serializeTask(detail.task)
   };
 }
@@ -135,28 +147,6 @@ export function serializeTaskCollection(tasks: TaskRecord[], project?: ProjectRe
   return {
     project: project ? serializeProjectSummary(project) : null,
     tasks: tasks.map(serializeTask)
-  };
-}
-
-function serializePlanComment(comment: ManagedPlanComment) {
-  return {
-    author: comment.author,
-    content: comment.content,
-    id: comment.id
-  };
-}
-
-export function serializePlanExtension(taskId: string, extension: ManagedPlanComment) {
-  return {
-    extension: serializePlanComment(extension),
-    taskId
-  };
-}
-
-export function serializePlanImprovement(taskId: string, improvement: ManagedPlanComment) {
-  return {
-    improvement: serializePlanComment(improvement),
-    taskId
   };
 }
 
@@ -171,5 +161,64 @@ export function serializeResource(resource: ResourceRecord) {
 export function serializeResourceCollection(resources: ResourceRecord[]) {
   return {
     resources: resources.map(serializeResource)
+  };
+}
+
+export function serializeTaskSnapshot(snapshot: TaskContextSnapshot) {
+  return {
+    task: serializeTask(snapshot.task),
+    project: serializeProjectSummary(snapshot.project),
+    plan: serializePlanBlock(snapshot.plan, snapshot.planComments, snapshot.planQuestions),
+    linkedResources: snapshot.linkedResources.map(serializeLinkedResource),
+    linkedTasks: snapshot.linkedTasks.map(serializeLinkedTask)
+  };
+}
+
+const UNCHANGED = { unchanged: true } as const;
+
+export function serializeDeltaSnapshot(snapshot: TaskContextSnapshot, since: number) {
+  const sinceDate = new Date(since).toISOString();
+
+  const taskUpdated = new Date(snapshot.task.updatedAt).getTime() > since;
+  const task = taskUpdated ? serializeTask(snapshot.task) : UNCHANGED;
+
+  const planUpdated = snapshot.plan !== null && new Date(snapshot.plan.updatedAt).getTime() > since;
+  const newComments = snapshot.planComments.filter((c) => new Date(c.updatedAt).getTime() > since);
+  const newQuestions = snapshot.planQuestions.filter((q) => new Date(q.updatedAt).getTime() > since);
+  const plan =
+    planUpdated || newComments.length > 0 || newQuestions.length > 0
+      ? {
+          ...(planUpdated && snapshot.plan
+            ? { contentMd: snapshot.plan.contentMd, updatedAt: snapshot.plan.updatedAt }
+            : UNCHANGED),
+          comments: newComments.length > 0 ? newComments.map(serializePlanComment) : UNCHANGED,
+          questions: newQuestions.length > 0 ? newQuestions.map(serializePlanQuestion) : UNCHANGED
+        }
+      : UNCHANGED;
+
+  const newLinkedResources = snapshot.linkedResources.filter(
+    (r) => new Date(r.createdAt).getTime() > since
+  );
+  const linkedResources =
+    newLinkedResources.length > 0 ? newLinkedResources.map(serializeLinkedResource) : UNCHANGED;
+
+  const newLinkedTasks = snapshot.linkedTasks.filter(
+    (t) => new Date(t.createdAt).getTime() > since
+  );
+  const linkedTasks =
+    newLinkedTasks.length > 0 ? newLinkedTasks.map(serializeLinkedTask) : UNCHANGED;
+
+  return { delta: true, since: sinceDate, task, plan, linkedResources, linkedTasks };
+}
+
+export function serializeAgentSession(session: AgentSession) {
+  return {
+    interactionCount: session.interactionCount,
+    lastContextVersion: session.lastContextVersion,
+    lastMode: session.lastMode,
+    lastUsedAt: session.lastUsedAt,
+    runId: session.runId,
+    state: session.state,
+    taskId: session.taskId
   };
 }

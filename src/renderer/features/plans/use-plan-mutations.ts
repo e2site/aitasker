@@ -28,9 +28,9 @@ export function useAnswerPlanQuestionMutation() {
 
   return useMutation({
     mutationFn: (input: AnswerPlanQuestionInput) => window.desktop.answerPlanQuestion(input),
-    onSuccess: async (detail) => {
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      queryClient.setQueryData(["task-detail", detail.task.id], detail);
+      await queryClient.invalidateQueries({ queryKey: ["task-detail"] });
     }
   });
 }
@@ -40,9 +40,9 @@ export function useAppendPlanExtensionMutation() {
 
   return useMutation({
     mutationFn: (input: AppendPlanExtensionInput) => window.desktop.appendPlanExtension(input),
-    onSuccess: async (detail) => {
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      queryClient.setQueryData(["task-detail", detail.task.id], detail);
+      await queryClient.invalidateQueries({ queryKey: ["task-detail"] });
     }
   });
 }
@@ -52,9 +52,9 @@ export function useAppendPlanImprovementMutation() {
 
   return useMutation({
     mutationFn: (input: AppendPlanImprovementInput) => window.desktop.appendPlanImprovement(input),
-    onSuccess: async (detail) => {
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      queryClient.setQueryData(["task-detail", detail.task.id], detail);
+      await queryClient.invalidateQueries({ queryKey: ["task-detail"] });
     }
   });
 }

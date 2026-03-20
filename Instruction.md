@@ -34,6 +34,7 @@
   - `find_tasks`
   - `get_task`
   - `get_plan`
+  - `get_plan_discussion`
   - `get_plan_extension`
   - `get_plan_improvement`
 - `save_plan`
@@ -138,20 +139,23 @@ claude mcp list
 
 1. `find_tasks` или `list_tasks`
 2. `get_task`
-3. проверить `linkedResources` в ответе `get_task`
+3. проверить в ответе `linkedResources`
 4. если для задачи привязаны ресурсы, прочитать нужные через `get_resource`
-5. при необходимости `get_plan`
-6. сформировать Markdown в формате плана
-7. при наличии незакрытых вопросов передать их отдельным массивом `openQuestions`
-8. `save_plan`
+5. проверить в ответе `plan.discussion`, `plan.extensions`, `plan.improvements`
+6. если там есть id, прочитать нужные записи через `get_plan_discussion`, `get_plan_extension`, `get_plan_improvement`
+7. при необходимости `get_plan`
+8. сформировать Markdown в формате плана
+9. при наличии незакрытых вопросов передать их отдельным массивом `openQuestions`
+10. `save_plan`
 
 Если по задаче уже есть переписка в расширениях и доработках, внешний агент может пройти отдельную цепочку:
 
 1. `get_task`
 2. проверить `linkedResources` и при необходимости прочитать их через `get_resource`
-3. `get_plan`
-4. собрать новый цельный Markdown-план с учетом переписки
-5. `consolidate_plan_discussion`
+3. проверить `plan.discussion`, `plan.extensions`, `plan.improvements` и прочитать нужные записи по id
+4. `get_plan`
+5. собрать новый цельный Markdown-план с учетом переписки
+6. `consolidate_plan_discussion`
 
 После этого отдельные discussion-блоки очищаются, а их содержание переезжает в основной план.
 

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { createAgentRegistry } from "./agents/agent-registry";
 import { AgentSessionRepository } from "./db/agent-session-repository";
 import { createAppDatabase } from "./db/database";
+import { PlanCommentRepository } from "./db/plan-comment-repository";
 import { PlanRepository } from "./db/plan-repository";
 import { ProjectRepository } from "./db/project-repository";
 import { PromptOverrideRepository } from "./db/prompt-override-repository";
@@ -144,6 +145,7 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
     const taskRepository = new TaskRepository(databaseContext.database);
     const taskLinkRepository = new TaskLinkRepository(databaseContext.database);
     const planRepository = new PlanRepository(databaseContext.database);
+    const planCommentRepository = new PlanCommentRepository(databaseContext.database);
     const projectRepository = new ProjectRepository(databaseContext.database);
     const promptOverrideRepository = new PromptOverrideRepository(databaseContext.database);
     const agentSessionRepository = new AgentSessionRepository(databaseContext.database);
@@ -184,6 +186,7 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
         }
         void sendTaskNotification(event, () => mainWindow, appService.getTaskDetail.bind(appService));
       },
+      planCommentRepository,
       planRepository,
       platform: process.platform,
       projectRepository,

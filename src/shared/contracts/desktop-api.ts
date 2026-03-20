@@ -94,6 +94,33 @@ export const resourceRecordSchema = z.object({
 });
 export type ResourceRecord = z.infer<typeof resourceRecordSchema>;
 
+export const planCommentKindSchema = z.enum(["discussion", "extension", "improvement"]);
+export type PlanCommentKind = z.infer<typeof planCommentKindSchema>;
+
+export const planCommentRecordSchema = z.object({
+  id: z.string(),
+  planId: z.string(),
+  taskId: z.string(),
+  kind: planCommentKindSchema,
+  author: planDiscussionAuthorSchema,
+  content: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+export type PlanCommentRecord = z.infer<typeof planCommentRecordSchema>;
+
+export const planQuestionRecordSchema = z.object({
+  id: z.string(),
+  planId: z.string(),
+  taskId: z.string(),
+  content: z.string(),
+  answer: z.string().nullable(),
+  answeredAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+export type PlanQuestionRecord = z.infer<typeof planQuestionRecordSchema>;
+
 export const linkedResourceRecordSchema = z.object({
   id: z.string(),
   resourceId: z.string(),
@@ -121,6 +148,8 @@ export const taskDetailSchema = z.object({
   task: taskRecordSchema,
   plan: planRecordSchema.nullable(),
   planRevisions: z.array(planRevisionRecordSchema),
+  planComments: z.array(planCommentRecordSchema),
+  planQuestions: z.array(planQuestionRecordSchema),
   agentSession: agentSessionRecordSchema.nullable(),
   linkedTasks: z.array(linkedTaskRecordSchema),
   linkedResources: z.array(linkedResourceRecordSchema)
@@ -234,6 +263,12 @@ export const answerPlanQuestionInputSchema = z.object({
 });
 export type AnswerPlanQuestionInput = z.infer<typeof answerPlanQuestionInputSchema>;
 
+export const addPlanQuestionInputSchema = z.object({
+  taskId: z.string(),
+  content: z.string().trim().min(1).max(4_000)
+});
+export type AddPlanQuestionInput = z.infer<typeof addPlanQuestionInputSchema>;
+
 export const createResourceInputSchema = z.object({
   name: z.string().trim().min(1, "Введите название ресурса.").max(200),
   contentMd: z.string().optional()
@@ -329,9 +364,11 @@ export type DeletePromptOverrideInput = z.infer<typeof deletePromptOverrideInput
 export const desktopDataChangeEventSchema = z.object({
   projectId: z.string().nullable(),
   reason: z.enum([
+    "add-plan-comment",
+    "add-plan-question",
+    "answer-plan-question",
     "append-plan-extension",
     "append-plan-improvement",
-    "answer-plan-question",
     "consolidate-plan-discussion",
     "create-project",
     "create-resource",

@@ -4,20 +4,24 @@
 */
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { findManagedPlanComment, parseManagedPlanContent } from "../../shared/plans/managed-plan-content";
+import { buildRegisteredPromptMessage } from "../../renderer/components/mcp-prompt-presets";
 import {
   serializeActivatedProject,
   serializeActiveProject,
+  serializeAgentSession,
   serializePlan,
-  serializePlanExtension,
-  serializePlanImprovement,
   serializeProjectCollection,
   serializeResource,
   serializeResourceCollection,
   serializeTask,
+  serializeDeltaSnapshot,
   serializeTaskCollection,
-  serializeTaskDetail
+  serializeTaskDetail,
+  serializeTaskSnapshot
 } from "./mcp-response-presenters";
+import { createFreshSession, generateRunId, startWork, toDeltaMode, touchSession } from "./agent-session";
+import type { AgentSession } from "./agent-session";
+import { createTaskContext } from "../services/task-context";
 import { normalizeProjectName } from "../db/project-repository";
 import type { AppService } from "../services/app-service";
 import type { DevLogger } from "../services/dev-logger";
@@ -126,6 +130,12 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
   );
   let activeProjectId: string | null = null;
 
+  let agentSession: AgentSession = createFreshSession(generateRunId());
+
+  function touch(patch: { taskId?: string; mode?: AgentSession["lastMode"] }) {
+    agentSession = touchSession(agentSession, patch);
+  }
+
   const requireActiveProject = async (): Promise<ProjectRecord> => {
     if (!activeProjectId) {
       throw new Error("Проект не активирован. Сначала вызовите activate_project.");
@@ -151,11 +161,10 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
     return project;
   };
 
-  const getScopedTaskDetail = async (taskId: string) => {
-    const project = await requirePreparedProject();
-    const detail = await appService.getTaskDetail(taskId, project.id);
+  const requireTaskContext = async (taskId: string) => {
+    await requirePreparedProject();
 
-    return { detail, project };
+    return createTaskContext(taskId, appService);
   };
 
   server.registerTool(
@@ -241,6 +250,9 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       }
 
       activeProjectId = resolved.project.id;
+
+      // Новый runId сигнализирует о начале новой сессии → сброс состояния
+      agentSession = createFreshSession(generateRunId());
 
       return {
         content: textContent("Проект активирован."),
@@ -366,15 +378,59 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
     "get_task",
     {
       description:
-        "Получить задачу по taskId без активации проекта, включая linkedResources и linkedTasks. Если linkedResources не пустой, их содержимое нужно читать отдельно через get_resource.",
+        "Получить полную информацию о задаче по taskId: task, plan (включая contentMd и все комментарии), linkedResources, linkedTasks.",
       inputSchema: {
         taskId: z.string()
       }
     },
     async ({ taskId }) => {
       logger.debug("mcp", "Tool get_task called", { taskId });
-      const detail = await appService.getTaskDetail(taskId);
-      const response = serializeTaskDetail(detail);
+      const ctx = createTaskContext(taskId, appService);
+      const snapshot = await ctx.getSnapshot();
+      const response = serializeTaskSnapshot(snapshot);
+
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
+      };
+    }
+  );
+
+  server.registerTool(
+    "sync_task",
+    {
+      description:
+        "Синхронизировать задачу с сессией. Первый вызов возвращает полный снапшот и переводит сессию в work-режим. Повторные вызовы в рамках той же сессии возвращают только изменения с момента первого вызова (delta-режим). Требует активного подготовленного проекта.",
+      inputSchema: {
+        taskId: z.string()
+      }
+    },
+    async ({ taskId }) => {
+      logger.debug("mcp", "Tool sync_task called", { taskId, mode: agentSession.lastMode, sessionTaskId: agentSession.taskId });
+      const ctx = await requireTaskContext(taskId);
+
+      // delta: та же задача, сессия уже в work/delta и есть lastContextVersion
+      const isDelta =
+        agentSession.lastMode !== null &&
+        agentSession.taskId === taskId &&
+        agentSession.lastContextVersion !== null;
+
+      if (isDelta) {
+        const since = agentSession.lastContextVersion!;
+        const snapshot = await ctx.getSnapshot();
+        agentSession = toDeltaMode(agentSession);
+        const response = serializeDeltaSnapshot(snapshot, since);
+
+        return {
+          content: textContent(JSON.stringify(response, null, 2)),
+          structuredContent: response
+        };
+      }
+
+      // work: первый вызов или смена задачи — полный снапшот
+      const snapshot = await ctx.getSnapshot();
+      agentSession = startWork(agentSession, taskId);
+      const response = serializeTaskSnapshot(snapshot);
 
       return {
         content: textContent(JSON.stringify(response, null, 2)),
@@ -394,92 +450,64 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       }
     },
     async ({ status, taskId }) => {
-      await getScopedTaskDetail(taskId);
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
       logger.info("mcp", "Tool update_task_status called", { taskId, status });
-      const detail = await appService.updateTaskStatus({ taskId, status });
+      await ctx.updateStatus(status);
+      const snapshot = await ctx.getSnapshot();
 
       return {
         content: textContent(`Статус задачи обновлен на ${status}.`),
-        structuredContent: serializeTaskDetail(detail)
+        structuredContent: serializeTaskSnapshot(snapshot)
       };
     }
   );
 
   server.registerTool(
-    "get_plan",
+    "answer_plan_question",
     {
-      description: "Получить текущий Markdown-план задачи вместе с расширениями и доработками внутри активного подготовленного проекта.",
-      inputSchema: {
-        taskId: z.string()
-      }
-    },
-    async ({ taskId }) => {
-      logger.debug("mcp", "Tool get_plan called", { taskId });
-      const { detail } = await getScopedTaskDetail(taskId);
-
-      return {
-        content: textContent(detail.plan ? parseManagedPlanContent(detail.plan.contentMd).renderedContentMd : ""),
-        structuredContent: serializePlan(detail.plan, taskId)
-      };
-    }
-  );
-
-  server.registerTool(
-    "get_plan_extension",
-    {
-      description: "Получить одно конкретное расширение плана по extensionId без чтения всего плана.",
+      description: "Ответить на открытый вопрос плана по questionId. Ответ переносится в discussion, вопрос удаляется из списка открытых.",
       inputSchema: {
         taskId: z.string(),
-        extensionId: z.string().min(1)
+        questionId: z.string().min(1),
+        answer: z.string().min(1)
       }
     },
-    async ({ extensionId, taskId }) => {
-      logger.debug("mcp", "Tool get_plan_extension called", { taskId, extensionId });
-      const { detail } = await getScopedTaskDetail(taskId);
-
-      if (!detail.plan) {
-        throw new Error(`План задачи ${taskId} не найден.`);
-      }
-
-      const extension = findManagedPlanComment(detail.plan.contentMd, "extension", extensionId);
-
-      if (!extension) {
-        throw new Error(`Расширение ${extensionId} для задачи ${taskId} не найдено.`);
-      }
+    async ({ answer, questionId, taskId }) => {
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
+      logger.info("mcp", "Tool answer_plan_question called", { questionId, taskId });
+      await ctx.answerQuestion(questionId, answer);
+      const snapshot = await ctx.getSnapshot();
 
       return {
-        content: textContent(extension.content),
-        structuredContent: serializePlanExtension(taskId, extension)
+        content: textContent("Ответ на открытый вопрос сохранен."),
+        structuredContent: serializeTaskSnapshot(snapshot)
       };
     }
   );
 
   server.registerTool(
-    "get_plan_improvement",
+    "add_plan_questions",
     {
-      description: "Получить одну конкретную доработку плана по improvementId без чтения всего плана.",
+      description: "Добавить один или несколько открытых вопросов к задаче без изменения плана. Используй когда нужно уточнить требования у пользователя.",
       inputSchema: {
         taskId: z.string(),
-        improvementId: z.string().min(1)
+        questions: z.array(z.string().min(1)).min(1)
       }
     },
-    async ({ improvementId, taskId }) => {
-      logger.debug("mcp", "Tool get_plan_improvement called", { taskId, improvementId });
-      const { detail } = await getScopedTaskDetail(taskId);
-
-      if (!detail.plan) {
-        throw new Error(`План задачи ${taskId} не найден.`);
+    async ({ questions, taskId }) => {
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
+      logger.info("mcp", "Tool add_plan_questions called", { taskId, count: questions.length });
+      for (const content of questions) {
+        await ctx.addQuestion(content);
       }
-
-      const improvement = findManagedPlanComment(detail.plan.contentMd, "improvement", improvementId);
-
-      if (!improvement) {
-        throw new Error(`Доработка ${improvementId} для задачи ${taskId} не найдена.`);
-      }
+      const snapshot = await ctx.getSnapshot();
 
       return {
-        content: textContent(improvement.content),
-        structuredContent: serializePlanImprovement(taskId, improvement)
+        content: textContent(`Добавлено вопросов: ${questions.length}.`),
+        structuredContent: serializeTaskSnapshot(snapshot)
       };
     }
   );
@@ -491,27 +519,22 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       inputSchema: {
         taskId: z.string(),
         contentMd: z.string().min(1),
-        openQuestions: z.array(z.string().min(1)).optional(),
-        source: z.enum(["human", "agent"]).optional()
+        openQuestions: z.array(z.string().min(1)).optional()
       }
     },
-    async ({ contentMd, openQuestions, source, taskId }) => {
-      await getScopedTaskDetail(taskId);
+    async ({ contentMd, openQuestions, taskId }) => {
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
       logger.info("mcp", "Tool save_plan called", {
         taskId,
-        openQuestionsCount: openQuestions?.length ?? 0,
-        source: source ?? "agent"
+        openQuestionsCount: openQuestions?.length ?? 0
       });
-      const detail = await appService.savePlan({
-        taskId,
-        contentMd,
-        openQuestions,
-        source: source ?? "agent"
-      });
+      await ctx.savePlan(contentMd, openQuestions, "agent");
+      const plan = await ctx.getPlan();
 
       return {
         content: textContent("План сохранен."),
-        structuredContent: serializePlan(detail.plan, taskId)
+        structuredContent: serializePlan(plan, taskId)
       };
     }
   );
@@ -526,13 +549,15 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       }
     },
     async ({ content, taskId }) => {
-      await getScopedTaskDetail(taskId);
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
       logger.info("mcp", "Tool append_plan_extension called", { taskId });
-      const detail = await appService.appendPlanExtension({ taskId, content, author: "agent" });
+      await ctx.appendExtension(content);
+      const plan = await ctx.getPlan();
 
       return {
         content: textContent("Расширение плана добавлено."),
-        structuredContent: serializePlan(detail.plan, taskId)
+        structuredContent: serializePlan(plan, taskId)
       };
     }
   );
@@ -547,13 +572,15 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       }
     },
     async ({ content, taskId }) => {
-      await getScopedTaskDetail(taskId);
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
       logger.info("mcp", "Tool append_plan_improvement called", { taskId });
-      const detail = await appService.appendPlanImprovement({ taskId, content, author: "agent" });
+      await ctx.appendImprovement(content);
+      const plan = await ctx.getPlan();
 
       return {
         content: textContent("Доработка плана добавлена."),
-        structuredContent: serializePlan(detail.plan, taskId)
+        structuredContent: serializePlan(plan, taskId)
       };
     }
   );
@@ -566,27 +593,39 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       inputSchema: {
         taskId: z.string(),
         contentMd: z.string().min(1),
-        openQuestions: z.array(z.string().min(1)).optional(),
-        source: z.enum(["human", "agent"]).optional()
+        openQuestions: z.array(z.string().min(1)).optional()
       }
     },
-    async ({ contentMd, openQuestions, source, taskId }) => {
-      await getScopedTaskDetail(taskId);
+    async ({ contentMd, openQuestions, taskId }) => {
+      const ctx = await requireTaskContext(taskId);
+      touch({ taskId });
       logger.info("mcp", "Tool consolidate_plan_discussion called", {
         taskId,
-        openQuestionsCount: openQuestions?.length ?? 0,
-        source: source ?? "agent"
+        openQuestionsCount: openQuestions?.length ?? 0
       });
-      const detail = await appService.consolidatePlanDiscussion({
-        taskId,
-        contentMd,
-        openQuestions,
-        source: source ?? "agent"
-      });
+      await ctx.consolidateDiscussion(contentMd, openQuestions, "agent");
+      const plan = await ctx.getPlan();
 
       return {
         content: textContent("Переписка по плану сжата в текущий план и очищена из отдельных блоков."),
-        structuredContent: serializePlan(detail.plan, taskId)
+        structuredContent: serializePlan(plan, taskId)
+      };
+    }
+  );
+
+  server.registerTool(
+    "get_session_state",
+    {
+      description:
+        "Получить текущее состояние MCP-сессии: над какой задачей работает агент, насколько свеж контекст и сколько шагов уже сделано. Используй перед началом работы с задачей, чтобы понять, нужно ли перечитывать контекст."
+    },
+    async () => {
+      logger.debug("mcp", "Tool get_session_state called");
+      const response = serializeAgentSession(agentSession);
+
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
       };
     }
   );
@@ -724,31 +763,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
           role: "user",
           content: {
             type: "text",
-            text: `Выполни planning задачи в AITasker через MCP.
-
-Вход:
-{
-  "mcp": "aitasker",
-  "action": "plan_task",
-  "projectRef": "${projectRef}",
-  "taskRef": "${taskRef}",
-  "read": ["get_active_project", "get_task", "get_plan"],
-  "write": ["save_plan", "update_task_status"],
-  "statusFlow": ["planning", "implementation"],
-  "rules": [
-    "resolve_project",
-    "resolve_task",
-    "inspect_linked_resources_from_get_task",
-    "read_required_resources_via_get_resource_before_answer",
-    "save_open_questions_separately"
-  ]
-}
-
-Доп. инструкции: ${instructions?.trim() || "none"}
-
-После get_task обязательно проверь linkedResources. Если там есть ресурсы, прочитай нужные через get_resource до построения плана.
-
-Не останавливайся на анализе. Сохрани результат в AITasker до финального ответа.`
+            text: buildRegisteredPromptMessage("plan_task", { instructions, projectRef, taskRef })
           }
         }
       ]
@@ -781,31 +796,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
           role: "user",
           content: {
             type: "text",
-            text: `Сожми обсуждение задачи в AITasker обратно в основной план через MCP.
-
-Вход:
-{
-  "mcp": "aitasker",
-  "action": "consolidate_plan_discussion",
-  "projectRef": "${projectRef}",
-  "taskRef": "${taskRef}",
-  "read": ["get_task", "get_plan"],
-  "write": ["consolidate_plan_discussion"],
-  "rules": [
-    "resolve_project",
-    "resolve_task",
-    "inspect_linked_resources_from_get_task",
-    "read_required_resources_via_get_resource_before_answer",
-    "merge_discussion_into_plan",
-    "save_open_questions_separately"
-  ]
-}
-
-Доп. инструкции: ${instructions?.trim() || "none"}
-
-После get_task обязательно проверь linkedResources. Если они есть, прочитай относящиеся к задаче ресурсы через get_resource перед обновлением плана.
-
-Не останавливайся на анализе. Обязательно сохрани обновленный план до финального ответа.`
+            text: buildRegisteredPromptMessage("compress_plan_discussion", { instructions, projectRef, taskRef })
           }
         }
       ]
@@ -838,22 +829,7 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
           role: "user",
           content: {
             type: "text",
-            text: `Подготовь или обнови SKILL.md проекта в AITasker.
-
-Вход:
-{
-  "mcp": "aitasker",
-  "action": "sync_project_skill",
-  "projectRef": "${projectRef}",
-  "skillPath": "${skillPath?.trim() || ""}",
-  "read": ["get_active_project"],
-  "write": ["update_project_profile"],
-  "rules": ["resolve_project", "determine_skill_path", "create_or_update_skill_file", "sync_skill_path_to_project_profile"]
-}
-
-Доп. инструкции: ${instructions?.trim() || "none"}
-
-Если путь нельзя определить надежно, остановись и запроси его у пользователя.`
+            text: buildRegisteredPromptMessage("create_project_skill", { instructions, projectRef, skillPath })
           }
         }
       ]
@@ -867,14 +843,15 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       description: "JSON задачи из активного подготовленного проекта"
     },
     async (uri, variables) => {
-      const { detail } = await getScopedTaskDetail(String(variables.id));
+      const ctx = await requireTaskContext(String(variables.id));
+      const task = await ctx.getTask();
 
       return {
         contents: [
           {
             uri: uri.href,
             mimeType: "application/json",
-            text: JSON.stringify(serializeTask(detail.task), null, 2)
+            text: JSON.stringify(serializeTask(task), null, 2)
           }
         ]
       };
@@ -888,14 +865,15 @@ export function createMcpServer(appService: AppService, logger: DevLogger): McpS
       description: "Markdown-план задачи из активного подготовленного проекта"
     },
     async (uri, variables) => {
-      const { detail } = await getScopedTaskDetail(String(variables.taskId));
+      const ctx = await requireTaskContext(String(variables.taskId));
+      const plan = await ctx.getPlan();
 
       return {
         contents: [
           {
             uri: uri.href,
             mimeType: "text/markdown",
-            text: detail.plan ? parseManagedPlanContent(detail.plan.contentMd).renderedContentMd : ""
+            text: plan?.contentMd ?? ""
           }
         ]
       };

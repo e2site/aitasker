@@ -1,8 +1,8 @@
 /*
-Назначение: Хранит и собирает единый набор коротких MCP-команд для проекта, задачи и точечных операций по плану.
+Назначение: Хранит и собирает все текстовые MCP-промты проекта: пресеты для UI, серверные prompt-сообщения и короткие команды для копирования.
 Не входит: Отрисовка UI-кнопок, копирование в буфер и состояние feedback после копирования.
 */
-import type { ProjectRecord, PromptOverrideRecord, TaskDetail } from "@/shared/contracts/desktop-api";
+import type { ProjectRecord, PromptOverrideRecord, ResourceRecord, TaskDetail } from "@/shared/contracts/desktop-api";
 import type { PromptVariable } from "@/shared/prompts/prompt-template";
 import { renderPromptTemplate } from "@/shared/prompts/prompt-template";
 
@@ -21,6 +21,7 @@ export type PromptId =
   | "implementation"
   | "finish-task"
   | "consolidate-discussion"
+  | "reload-context"
   | "project-skill";
 
 export interface ProjectPromptContext {
@@ -30,10 +31,12 @@ export interface ProjectPromptContext {
   skillFilePath: string | null;
 }
 
-const RESOURCE_AWARE_RULES = [
-  "inspect_linked_resources_from_get_task",
-  "read_required_resources_via_get_resource_before_answer"
-];
+export interface RegisteredPromptMessageArgs {
+  instructions?: string;
+  projectRef: string;
+  taskRef?: string;
+  skillPath?: string;
+}
 
 function buildProjectPromptVars(context: ProjectPromptContext): PromptVariable[] {
   const projectPath = context.rootPath ?? "<укажи путь проекта>";
@@ -47,6 +50,79 @@ function buildProjectPromptVars(context: ProjectPromptContext): PromptVariable[]
     { name: "projectPath", value: projectPath, placeholder: "«Путь к проекту»" },
     { name: "skillFilePath", value: skillFilePath, placeholder: "«Путь к SKILL.md»" }
   ];
+}
+
+export function buildProjectActivationCopyPrompt(project: Pick<ProjectRecord, "id" | "name" | "rootPath" | "description" | "languages">): string {
+  return [
+    `Активируй проект "${project.name}" (ID: ${project.id}).`,
+    `Путь: ${project.rootPath ?? "не указан"}.`,
+    `Описание: ${project.description || "нет"}.`,
+    `Языки: ${project.languages.join(", ") || "нет"}.`,
+    "Заполни карточку проекта через update_project_profile если поля не заполнены."
+  ].join("\n");
+}
+
+export function buildResourceReadCopyPrompt(resource: Pick<ResourceRecord, "id" | "name">): string {
+  return `Прочитай ресурс "${resource.name}" — вызови get_resource с id "${resource.id}"`;
+}
+
+export function buildRegisteredPromptMessage(
+  promptId: "plan_task" | "compress_plan_discussion" | "create_project_skill",
+  args: RegisteredPromptMessageArgs
+): string {
+  if (promptId === "plan_task") {
+    return `Выполни планирование задачи в AITasker через MCP aitasker.
+
+Проект: ${args.projectRef}
+Задача: ${args.taskRef ?? ""}
+
+Шаги:
+1. Активируй проект через activate_project.
+2. Найди задачу и получи её данные через sync_task — это переведёт сессию в work-режим.
+3. Прочитай linkedResources через get_resource если они влияют на задачу.
+4. Если есть открытые вопросы (plan.questions) — ответь через answer_plan_question или оставь нерешённые в openQuestions при сохранении.
+5. Составь план и сохрани через save_plan, передав openQuestions отдельным массивом.
+6. Переведи статус задачи в planning, затем в implementation через update_task_status.
+
+${args.instructions?.trim() ? `Доп. инструкции: ${args.instructions.trim()}` : ""}
+
+Не останавливайся на анализе. Сохрани результат в AITasker до финального ответа.`;
+  }
+
+  if (promptId === "compress_plan_discussion") {
+    return `Сожми обсуждение задачи в обновлённый план в AITasker через MCP aitasker.
+
+Проект: ${args.projectRef}
+Задача: ${args.taskRef ?? ""}
+
+Шаги:
+1. Активируй проект через activate_project.
+2. Получи данные задачи через sync_task.
+3. Прочитай все комментарии (plan.comments) и открытые вопросы (plan.questions).
+4. Прочитай linkedResources через get_resource если нужны для понимания.
+5. Если на вопросы есть ответы — сохрани через answer_plan_question.
+6. Собери обновлённый план из базового плана + комментарии + решённые вопросы.
+7. Сохрани через consolidate_plan_discussion, нерешённые вопросы передай в openQuestions.
+
+${args.instructions?.trim() ? `Доп. инструкции: ${args.instructions.trim()}` : ""}
+
+Не останавливайся на анализе. Обязательно сохрани обновлённый план до финального ответа.`;
+  }
+
+  return `Подготовь или обнови SKILL.md проекта в AITasker через MCP aitasker.
+
+Проект: ${args.projectRef}
+${args.skillPath?.trim() ? `Путь к SKILL.md: ${args.skillPath.trim()}` : ""}
+
+Шаги:
+1. Активируй проект через activate_project и прочитай карточку.
+2. Определи путь к SKILL.md из skillFilePath проекта или используй <rootPath>/SKILL.md.
+3. Создай или обнови файл SKILL.md с описанием стека, конвенций и особенностей проекта.
+4. Сохрани путь к файлу через update_project_profile.
+
+${args.instructions?.trim() ? `Доп. инструкции: ${args.instructions.trim()}` : ""}
+
+Если путь нельзя определить надёжно, остановись и запроси его у пользователя.`;
 }
 
 /** Возвращает переменные промта для конкретной задачи. */
@@ -82,129 +158,120 @@ export function getProjectPromptVars(project: Pick<ProjectRecord, "id" | "name" 
 /** Базовые шаблоны промтов. */
 export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
   "activate-project":
-    `{
-  "mcp": "aitasker",
-  "projectId": "{{projectId}}",
-  "action": "activate_project_profile",
-  "read": ["get_active_project"],
-  "write": ["update_project_profile"],
-  "rules": ["ensure_project_profile_complete"]
-}`,
+    `Активируй проект "{{projectName}}" (ID: {{projectId}}) через activate_project.
+Проверь карточку проекта через get_active_project. Если поля не заполнены — заполни через update_project_profile.`,
+
   "agent-task-prompt":
-    `{
-  "mcp": "aitasker",
-  "projectId": "{{projectId}}",
-  "action": "create_task",
-  "fillRequired": ["title", "description"],
-  "nextStatus": "planning",
-  "rules": ["create_task_in_project", "save_plan_after_creation"]
-}
+    `Создай задачу в проекте {{projectName}} (ID: {{projectId}}) через MCP aitasker.
+Вызови activate_project, затем create_task с title и description.
+После создания сохрани план через save_plan и переведи статус в planning.
+
 Задача:`,
+
   "plan-task":
-    `{
-  "mcp": "aitasker",
-  "projectId": "{{projectId}}",
-  "action": "plan_task",
-  "taskId": "{{taskId}}",
-  "read": ["get_task", "get_plan"],
-  "write": ["save_plan", "update_task_status"],
-  "statusFlow": ["planning", "implementation"],
-  "rules": ["read_current_plan_if_exists", "save_open_questions_separately", "${RESOURCE_AWARE_RULES[0]}", "${RESOURCE_AWARE_RULES[1]}"]
-}`,
+    `Выполни планирование задачи "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}}.
+
+Шаги:
+1. Вызови sync_task с taskId {{taskId}} — получишь полный снапшот и сессия перейдёт в work-режим.
+2. Прочитай linkedResources через get_resource если они влияют на задачу.
+3. Если есть открытые вопросы (plan.questions) — ответь через answer_plan_question или оставь в openQuestions.
+4. Составь план и сохрани через save_plan.
+5. Переведи статус в planning, затем implementation через update_task_status.`,
+
   "clarify-plan":
-    `{
-  "mcp": "aitasker",
-  "projectId": "{{projectId}}",
-  "action": "clarify_plan",
-  "taskId": "{{taskId}}",
-  "read": ["get_task", "get_plan"],
-  "write": ["save_plan"],
-  "rules": ["review_current_plan", "add_missing_steps", "save_open_questions_separately", "${RESOURCE_AWARE_RULES[0]}", "${RESOURCE_AWARE_RULES[1]}"]
-}`,
+    `Уточни план задачи "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}}.
+
+Шаги:
+1. Вызови sync_task с taskId {{taskId}} для получения актуального состояния.
+2. Прочитай plan.comments и plan.questions.
+3. Прочитай linkedResources через get_resource если нужны.
+4. Ответь на открытые вопросы через answer_plan_question или оставь нерешённые в openQuestions.
+5. Дополни план недостающими шагами и сохрани через save_plan.`,
+
   "implementation":
-    `{
-  "mcp": "aitasker",
-  "projectId": "{{projectId}}",
-  "action": "implement_task",
-  "taskId": "{{taskId}}",
-  "read": ["get_task", "get_plan"],
-  "write": ["append_plan_extension", "append_plan_improvement", "update_task_status"],
-  "status": "implementation",
-  "rules": [
-    "check_plan_before_work",
-    "implement_by_plan_steps",
-    "append_context_via_extension",
-    "append_decisions_and_issues_via_improvement",
-    "keep_status_implementation",
-    "${RESOURCE_AWARE_RULES[0]}",
-    "${RESOURCE_AWARE_RULES[1]}"
-  ]
-}`,
+    `Реализуй задачу "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}} по шагам плана.
+
+Шаги:
+1. Вызови sync_task с taskId {{taskId}}.
+2. Прочитай plan.comments и linkedResources через get_resource.
+3. Реализуй задачу по шагам плана.
+4. Контекстные заметки добавляй через append_plan_extension.
+5. Решения и проблемы фиксируй через append_plan_improvement.
+6. После завершения переведи статус в testing через update_task_status.`,
+
   "finish-task":
-    `{
-  "mcp": "aitasker",
-  "projectId": "{{projectId}}",
-  "action": "complete_task",
-  "taskId": "{{taskId}}",
-  "read": ["get_task", "get_plan"],
-  "write": ["append_plan_extension", "append_plan_improvement", "update_task_status"],
-  "status": "completed",
-  "rules": ["verify_plan_done", "record_final_notes_if_needed", "${RESOURCE_AWARE_RULES[0]}", "${RESOURCE_AWARE_RULES[1]}"]
-}`,
+    `Заверши задачу "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}}.
+
+Шаги:
+1. Вызови sync_task с taskId {{taskId}}.
+2. Убедись, что все шаги плана выполнены.
+3. При необходимости добавь финальные заметки через append_plan_extension.
+4. Переведи статус в completed через update_task_status.`,
+
   "consolidate-discussion":
-    `{
-  "mcp": "aitasker",
-  "projectId": "{{projectId}}",
-  "action": "consolidate_plan_discussion",
-  "taskId": "{{taskId}}",
-  "read": ["get_task", "get_plan"],
-  "write": ["consolidate_plan_discussion"],
-  "rules": ["merge_extensions_and_improvements_into_plan", "save_open_questions_separately", "${RESOURCE_AWARE_RULES[0]}", "${RESOURCE_AWARE_RULES[1]}"]
-}`,
+    `Сожми обсуждение задачи "{{taskTitle}}" (ID: {{taskId}}) в обновлённый план.
+
+Шаги:
+1. Вызови sync_task с taskId {{taskId}}.
+2. Прочитай все plan.comments и plan.questions.
+3. Ответь на решённые вопросы через answer_plan_question.
+4. Собери новый план из базового + комментарии.
+5. Сохрани через consolidate_plan_discussion, нерешённые вопросы передай в openQuestions.`,
+
+  "reload-context":
+    `Перезагрузи контекст задачи "{{taskTitle}}" (ID: {{taskId}}) — контекст мог сжаться.
+
+Вызови get_task с taskId {{taskId}} для получения полного снапшота задачи:
+план, комментарии, вопросы, связанные задачи и ресурсы.
+
+После загрузки прочитай linkedResources через get_resource если они нужны для продолжения работы.`,
+
   "project-skill":
-    `{
-  "mcp": "aitasker",
-  "projectId": "{{projectId}}",
-  "action": "sync_project_skill",
-  "skillFilePath": "{{skillFilePath}}",
-  "read": ["get_active_project"],
-  "write": ["update_project_profile"],
-  "rules": ["create_or_update_skill_file", "sync_skill_path_to_project_profile"]
-}`
+    `Создай или обнови SKILL.md для проекта {{projectName}} (ID: {{projectId}}).
+
+Шаги:
+1. Прочитай карточку проекта через get_active_project.
+2. Путь к файлу: {{skillFilePath}}.
+3. Создай или обнови SKILL.md с описанием стека, конвенций и особенностей проекта.
+4. Сохрани путь через update_project_profile.`
 };
 
 const PROMPT_META: Record<PromptId, { title: string; description: string }> = {
   "activate-project": {
     title: "Активация проекта",
-    description: "Активировать проект и проверить карточку без длинного текстового сценария."
+    description: "Активировать проект и проверить карточку."
   },
   "agent-task-prompt": {
-    title: "Создать задачу в агенте",
-    description: "Короткая команда для создания задачи, когда title и description будут переданы отдельно."
+    title: "Создать задачу",
+    description: "Создать задачу и сразу сохранить план."
   },
   "plan-task": {
     title: "Планирование задачи",
-    description: "Короткая команда для перевода задачи в planning и сохранения плана."
+    description: "Составить и сохранить план задачи."
   },
   "clarify-plan": {
     title: "Уточнение плана",
-    description: "Короткая команда для перечитывания плана и его уточнения."
+    description: "Перечитать план и уточнить его с учётом обсуждения."
   },
   "implementation": {
-    title: "Переход к реализации",
-    description: "Короткая команда для реализации по шагам плана."
+    title: "Реализация",
+    description: "Реализовать задачу по шагам плана."
   },
   "finish-task": {
     title: "Завершение задачи",
-    description: "Короткая команда для финальной проверки и перевода задачи в completed."
+    description: "Финальная проверка и перевод задачи в completed."
   },
   "consolidate-discussion": {
     title: "Сжать переписку в план",
-    description: "Короткая команда для сборки нового плана из расширений и доработок."
+    description: "Собрать новый план из расширений и доработок."
+  },
+  "reload-context": {
+    title: "Перезагрузить контекст",
+    description: "Полная загрузка данных задачи через get_task — когда контекст сжался."
   },
   "project-skill": {
     title: "Создание SKILL.md",
-    description: "Короткая команда для обновления SKILL.md и карточки проекта."
+    description: "Обновить SKILL.md и карточку проекта."
   }
 };
 
@@ -222,49 +289,58 @@ export function resolvePrompt(
   return renderPromptTemplate(template, vars);
 }
 
-const PROMPTS_WITH_CONTEXT = new Set<PromptId>([
-  "plan-task", "clarify-plan", "implementation", "finish-task", "consolidate-discussion"
+// Промты где агент впервые берёт задачу — нужна полная подсказка о ресурсах
+const PROMPTS_WITH_FULL_CONTEXT = new Set<PromptId>([
+  "plan-task", "reload-context"
 ]);
 
-function buildContextSuffix(detail: TaskDetail): string {
+// Промты где агент продолжает работу через sync_task — только связанные задачи, без инструкции по ресурсам
+const PROMPTS_WITH_LINKED_TASKS = new Set<PromptId>([
+  "clarify-plan", "implementation", "finish-task", "consolidate-discussion"
+]);
+
+/** Полный суффикс: ресурсы с инструкцией + связанные задачи. Для первого чтения задачи. */
+function buildFullContextSuffix(detail: TaskDetail): string {
   const lines: string[] = [];
 
   for (const r of detail.linkedResources) {
-    lines.push(`resource:${r.resourceId} "${r.name}" -> после get_task прочитай через get_resource("${r.resourceId}")`);
+    lines.push(`Ресурс: "${r.name}" (id: ${r.resourceId}) — прочитай через get_resource("${r.resourceId}")`);
   }
 
   for (const t of detail.linkedTasks) {
-    lines.push(`task:${t.taskId} "${t.title}"`);
+    lines.push(`Связанная задача: "${t.title}" (id: ${t.taskId})`);
   }
 
   if (lines.length === 0) return "";
 
   const resourceInstruction =
     detail.linkedResources.length > 0
-      ? "\nСначала проверь linkedResources в ответе get_task. Если ресурсы есть и они влияют на задачу, обязательно открой их через get_resource до ответа."
+      ? "\nЕсли ресурсы влияют на задачу — обязательно прочитай их через get_resource до ответа."
       : "";
 
-  return "\n\nКонтекст:\n" + lines.join("\n") + resourceInstruction;
+  return "\n\nСвязанные объекты:\n" + lines.join("\n") + resourceInstruction;
+}
+
+/** Краткий суффикс: только связанные задачи, без инструкции по ресурсам. Для продолжения работы через sync_task. */
+function buildLinkedTasksSuffix(detail: TaskDetail): string {
+  if (detail.linkedTasks.length === 0) return "";
+
+  const lines = detail.linkedTasks.map(
+    (t) => `Связанная задача: "${t.title}" (id: ${t.taskId})`
+  );
+
+  return "\n\nСвязанные задачи:\n" + lines.join("\n");
 }
 
 export function buildPlanCommentPrompt(detail: TaskDetail, kind: "extension" | "improvement", commentId: string): string {
-  if (kind === "extension") {
-    return `{
-  "mcp": "aitasker",
-  "projectId": "${detail.task.projectId}",
-  "action": "review_plan_extension",
-  "taskId": "${detail.task.id}",
-  "extensionId": "${commentId}"
-}`;
-  }
+  const kindLabel = kind === "extension" ? "расширение" : "доработку";
+  const kindArg = kind === "extension" ? `extensionId: "${commentId}"` : `improvementId: "${commentId}"`;
 
-  return `{
-  "mcp": "aitasker",
-  "projectId": "${detail.task.projectId}",
-  "action": "review_plan_improvement",
-  "taskId": "${detail.task.id}",
-  "improvementId": "${commentId}"
-}`;
+  return `Проработай ${kindLabel} плана задачи "${detail.task.title}" (ID: ${detail.task.id}).
+
+1. Вызови sync_task с taskId ${detail.task.id} для получения актуального контекста.
+2. Найди ${kindLabel} с ${kindArg} в plan.comments.
+3. Проанализируй и при необходимости обнови план через save_plan или consolidate_plan_discussion.`;
 }
 
 export function buildMcpPromptPresets(
@@ -272,12 +348,19 @@ export function buildMcpPromptPresets(
   overrides: PromptOverrideRecord[] = []
 ): McpPromptPreset[] {
   const vars = getPromptVars(detail);
-  const suffix = buildContextSuffix(detail);
+  const fullSuffix = buildFullContextSuffix(detail);
+  const linkedSuffix = buildLinkedTasksSuffix(detail);
 
-  return (Object.keys(BASE_PROMPT_TEMPLATES) as PromptId[]).map((id) => ({
-    id,
-    title: PROMPT_META[id].title,
-    description: PROMPT_META[id].description,
-    prompt: resolvePrompt(id, vars, overrides) + (PROMPTS_WITH_CONTEXT.has(id) ? suffix : "")
-  }));
+  return (Object.keys(BASE_PROMPT_TEMPLATES) as PromptId[]).map((id) => {
+    let suffix = "";
+    if (PROMPTS_WITH_FULL_CONTEXT.has(id)) suffix = fullSuffix;
+    else if (PROMPTS_WITH_LINKED_TASKS.has(id)) suffix = linkedSuffix;
+
+    return {
+      id,
+      title: PROMPT_META[id].title,
+      description: PROMPT_META[id].description,
+      prompt: resolvePrompt(id, vars, overrides) + suffix
+    };
+  });
 }

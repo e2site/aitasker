@@ -107,8 +107,40 @@ export const taskResourcesTable = sqliteTable("task_resources", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull()
 });
 
+export const planCommentsTable = sqliteTable("plan_comments", {
+  id: text("id").primaryKey(),
+  planId: text("plan_id")
+    .notNull()
+    .references(() => plansTable.id, { onDelete: "cascade" }),
+  taskId: text("task_id")
+    .notNull()
+    .references(() => tasksTable.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // "discussion" | "extension" | "improvement"
+  author: text("author").notNull(), // "human" | "agent"
+  content: text("content").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+
+export const planQuestionsTable = sqliteTable("plan_questions", {
+  id: text("id").primaryKey(),
+  planId: text("plan_id")
+    .notNull()
+    .references(() => plansTable.id, { onDelete: "cascade" }),
+  taskId: text("task_id")
+    .notNull()
+    .references(() => tasksTable.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  answer: text("answer"),
+  answeredAt: integer("answered_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+
 export const databaseSchema = {
   agentSessionsTable,
+  planCommentsTable,
+  planQuestionsTable,
   planRevisionsTable,
   plansTable,
   projectsTable,

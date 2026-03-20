@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy, Eye, Pencil, Trash2 } from "lucide-react";
 import { MarkdownPlanEditor } from "@/renderer/editors/markdown-plan-editor";
 import { MarkdownPlanViewer } from "@/renderer/components/markdown-plan-viewer";
+import { buildResourceReadCopyPrompt } from "@/renderer/components/mcp-prompt-presets";
 import type { ResourceRecord } from "@/shared/contracts/desktop-api";
 
 export interface ResourceDetailPanelProps {
@@ -48,7 +49,7 @@ export function ResourceDetailPanel({
   };
 
   const copyPrompt = async () => {
-    const text = `Для получения ресурсов "${resource.name}" выполни get_resource с id "${resource.id}"`;
+    const text = buildResourceReadCopyPrompt(resource);
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);

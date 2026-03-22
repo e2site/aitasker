@@ -2,9 +2,9 @@
 Назначение: Рендерит топ-бар страницы задач — выбор проекта, поиск, фильтры по статусу, создание задач и действия в настройках проекта.
 Не входит: Таблица задач, панель деталей и загрузка данных.
 */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Copy, FolderPlus, Plus, Search, Settings2, X } from "lucide-react";
+import { Copy, FolderPlus, Search, Settings2, X } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type {
@@ -17,19 +17,14 @@ import type {
 import { createProjectInputSchema } from "@/shared/contracts/desktop-api";
 import { ProjectCard } from "@/renderer/components/project-card";
 import { PromptOverridesDialog } from "@/renderer/components/prompt-overrides-dialog";
-import { SettingsDropdown } from "@/renderer/components/settings-dropdown";
 import { TaskCreateForm } from "@/renderer/components/task-create-form";
 import { cn } from "@/renderer/components/ui/class-names";
 import { Button } from "@/renderer/components/ui/button";
+import { useSetAppMenuTaskActions } from "@/renderer/app/app-menu-actions-context";
 import { usePromptOverridesQuery } from "@/renderer/features/prompts/use-prompt-override-queries";
 import { getProjectPromptVars, resolvePrompt } from "@/renderer/components/mcp-prompt-presets";
 import { TASK_STATUS_LIST, getTaskStatusMeta } from "@/renderer/features/tasks/task-status-meta";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/renderer/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/renderer/components/ui/dropdown-menu";
 
 export interface TaskTableTopBarProps {
   allTasks: TaskRecord[];
@@ -59,6 +54,7 @@ function buildMcpEndpointHint(): string {
 }
 
 export function TaskTableTopBar(props: TaskTableTopBarProps) {
+  const setTaskActions = useSetAppMenuTaskActions();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showProjectCreateModal, setShowProjectCreateModal] = useState(false);
@@ -123,6 +119,28 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
     props.onStatusFilterChange(next);
   }
 
+  useEffect(() => {
+    setTaskActions({
+      isExportingData: props.isExportingData,
+      isImportingData: props.isImportingData,
+      onCopyAgentPrompt: handleCopyAgentPrompt,
+      onOpenCreateModal: () => setShowCreateModal(true),
+      onOpenPromptOverrides: () => setShowPromptOverridesModal(true),
+      onExportData: props.onExportData,
+      onImportData: props.onImportData
+    });
+
+    return () => setTaskActions(null);
+  }, [
+    props.isExportingData,
+    props.isImportingData,
+    props.onExportData,
+    props.onImportData,
+    setTaskActions,
+    selectedProject,
+    overrides
+  ]);
+
   return (
     <div className="app-card space-y-4">
       {/* Row 1: project switcher + create button */}
@@ -145,8 +163,9 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
         </button>
 
         {props.projects.map((project) => {
-          const count = props.allTasks.filter((t) => t.projectId === project.id).length;
+          const count = props.allTasks.filter((task) => task.projectId === project.id).length;
           const isActive = props.selectedProjectId === project.id;
+
           return (
             <div key={project.id} className="flex items-center gap-0.5">
               <button
@@ -178,7 +197,6 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
           );
         })}
 
-        {/* Кнопка создания нового проекта */}
         <button
           type="button"
           title="Новый проект"
@@ -188,41 +206,6 @@ export function TaskTableTopBar(props: TaskTableTopBarProps) {
           <FolderPlus className="size-3.5" />
         </button>
 
-        {/* Кнопка с дропдауном: создать задачу / создать в агенте */}
-        <div className="ml-auto flex items-center gap-2">
-          <SettingsDropdown
-            isExporting={props.isExportingData}
-            isImporting={props.isImportingData}
-            onExportData={props.onExportData}
-            onImportData={props.onImportData}
-            onOpenPromptOverrides={() => setShowPromptOverridesModal(true)}
-          />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" size="sm">
-                <Plus className="size-4" />
-                Создать задачу
-                <ChevronDown className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52 bg-white p-1.5 shadow-lg">
-              <DropdownMenuItem
-                onClick={() => setShowCreateModal(true)}
-                className="gap-2 rounded-lg px-3 py-2 text-sm"
-              >
-                <Plus className="size-4 text-slate-500" />
-                Создать задачу
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={handleCopyAgentPrompt}
-                className="gap-2 rounded-lg px-3 py-2 text-sm"
-              >
-                <Copy className="size-4 text-slate-500" />
-                Создать задачу в агенте
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
       </div>
 
       {/* Row 2: search + status filters + counter */}

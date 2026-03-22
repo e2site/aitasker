@@ -2250,304 +2250,10 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 // src/main/mcp/create-mcp-server.ts
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+// src/main/mcp/actions/plan-actions.ts
 import { z as z2 } from "zod";
-
-// src/renderer/components/mcp-prompt-presets.ts
-function buildRegisteredPromptMessage(promptId, args) {
-  if (promptId === "plan_task") {
-    return `\u0412\u044B\u043F\u043E\u043B\u043D\u0438 \u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 AITasker \u0447\u0435\u0440\u0435\u0437 MCP aitasker.
-
-\u041F\u0440\u043E\u0435\u043A\u0442: ${args.projectRef}
-\u0417\u0430\u0434\u0430\u0447\u0430: ${args.taskRef ?? ""}
-
-\u0428\u0430\u0433\u0438:
-1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project.
-2. \u041D\u0430\u0439\u0434\u0438 \u0437\u0430\u0434\u0430\u0447\u0443 \u0438 \u043F\u043E\u043B\u0443\u0447\u0438 \u0435\u0451 \u0434\u0430\u043D\u043D\u044B\u0435 \u0447\u0435\u0440\u0435\u0437 sync_task \u2014 \u044D\u0442\u043E \u043F\u0435\u0440\u0435\u0432\u0435\u0434\u0451\u0442 \u0441\u0435\u0441\u0441\u0438\u044E \u0432 work-\u0440\u0435\u0436\u0438\u043C.
-3. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 linkedResources \u0447\u0435\u0440\u0435\u0437 get_resource \u0435\u0441\u043B\u0438 \u043E\u043D\u0438 \u0432\u043B\u0438\u044F\u044E\u0442 \u043D\u0430 \u0437\u0430\u0434\u0430\u0447\u0443.
-4. \u0415\u0441\u043B\u0438 \u0435\u0441\u0442\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B (plan.questions) \u2014 \u043E\u0442\u0432\u0435\u0442\u044C \u0447\u0435\u0440\u0435\u0437 answer_plan_question \u0438\u043B\u0438 \u043E\u0441\u0442\u0430\u0432\u044C \u043D\u0435\u0440\u0435\u0448\u0451\u043D\u043D\u044B\u0435 \u0432 openQuestions \u043F\u0440\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0438.
-5. \u0421\u043E\u0441\u0442\u0430\u0432\u044C \u043F\u043B\u0430\u043D \u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u0447\u0435\u0440\u0435\u0437 save_plan, \u043F\u0435\u0440\u0435\u0434\u0430\u0432 openQuestions \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u043C\u0430\u0441\u0441\u0438\u0432\u043E\u043C.
-6. \u041F\u0435\u0440\u0435\u0432\u0435\u0434\u0438 \u0441\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 planning, \u0437\u0430\u0442\u0435\u043C \u0432 implementation \u0447\u0435\u0440\u0435\u0437 update_task_status.
-
-${args.instructions?.trim() ? `\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${args.instructions.trim()}` : ""}
-
-\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442 \u0432 AITasker \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`;
-  }
-  if (promptId === "compress_plan_discussion") {
-    return `\u0421\u043E\u0436\u043C\u0438 \u043E\u0431\u0441\u0443\u0436\u0434\u0435\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0432 AITasker \u0447\u0435\u0440\u0435\u0437 MCP aitasker.
-
-\u041F\u0440\u043E\u0435\u043A\u0442: ${args.projectRef}
-\u0417\u0430\u0434\u0430\u0447\u0430: ${args.taskRef ?? ""}
-
-\u0428\u0430\u0433\u0438:
-1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project.
-2. \u041F\u043E\u043B\u0443\u0447\u0438 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0447\u0435\u0440\u0435\u0437 sync_task.
-3. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u0432\u0441\u0435 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0438 (plan.comments) \u0438 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B (plan.questions).
-4. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 linkedResources \u0447\u0435\u0440\u0435\u0437 get_resource \u0435\u0441\u043B\u0438 \u043D\u0443\u0436\u043D\u044B \u0434\u043B\u044F \u043F\u043E\u043D\u0438\u043C\u0430\u043D\u0438\u044F.
-5. \u0415\u0441\u043B\u0438 \u043D\u0430 \u0432\u043E\u043F\u0440\u043E\u0441\u044B \u0435\u0441\u0442\u044C \u043E\u0442\u0432\u0435\u0442\u044B \u2014 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u0447\u0435\u0440\u0435\u0437 answer_plan_question.
-6. \u0421\u043E\u0431\u0435\u0440\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0438\u0437 \u0431\u0430\u0437\u043E\u0432\u043E\u0433\u043E \u043F\u043B\u0430\u043D\u0430 + \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0438 + \u0440\u0435\u0448\u0451\u043D\u043D\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B.
-7. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u0447\u0435\u0440\u0435\u0437 consolidate_plan_discussion, \u043D\u0435\u0440\u0435\u0448\u0451\u043D\u043D\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B \u043F\u0435\u0440\u0435\u0434\u0430\u0439 \u0432 openQuestions.
-
-${args.instructions?.trim() ? `\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${args.instructions.trim()}` : ""}
-
-\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`;
-  }
-  return `\u041F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u044C \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u0438 SKILL.md \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0432 AITasker \u0447\u0435\u0440\u0435\u0437 MCP aitasker.
-
-\u041F\u0440\u043E\u0435\u043A\u0442: ${args.projectRef}
-${args.skillPath?.trim() ? `\u041F\u0443\u0442\u044C \u043A SKILL.md: ${args.skillPath.trim()}` : ""}
-
-\u0428\u0430\u0433\u0438:
-1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project \u0438 \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443.
-2. \u041E\u043F\u0440\u0435\u0434\u0435\u043B\u0438 \u043F\u0443\u0442\u044C \u043A SKILL.md \u0438\u0437 skillFilePath \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0438\u043B\u0438 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 <rootPath>/SKILL.md.
-3. \u0421\u043E\u0437\u0434\u0430\u0439 \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u0438 \u0444\u0430\u0439\u043B SKILL.md \u0441 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435\u043C \u0441\u0442\u0435\u043A\u0430, \u043A\u043E\u043D\u0432\u0435\u043D\u0446\u0438\u0439 \u0438 \u043E\u0441\u043E\u0431\u0435\u043D\u043D\u043E\u0441\u0442\u0435\u0439 \u043F\u0440\u043E\u0435\u043A\u0442\u0430.
-4. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u043F\u0443\u0442\u044C \u043A \u0444\u0430\u0439\u043B\u0443 \u0447\u0435\u0440\u0435\u0437 update_project_profile.
-
-${args.instructions?.trim() ? `\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${args.instructions.trim()}` : ""}
-
-\u0415\u0441\u043B\u0438 \u043F\u0443\u0442\u044C \u043D\u0435\u043B\u044C\u0437\u044F \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u044C \u043D\u0430\u0434\u0451\u0436\u043D\u043E, \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0441\u044C \u0438 \u0437\u0430\u043F\u0440\u043E\u0441\u0438 \u0435\u0433\u043E \u0443 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F.`;
-}
-
-// src/main/mcp/mcp-response-presenters.ts
-function serializeProjectSummary(project) {
-  return {
-    id: project.id,
-    isProfileComplete: project.isProfileComplete,
-    name: project.name
-  };
-}
-function serializeActiveProject(project) {
-  return {
-    description: project.description,
-    id: project.id,
-    isProfileComplete: project.isProfileComplete,
-    languages: project.languages,
-    name: project.name,
-    rootPath: project.rootPath,
-    skillFilePath: project.skillFilePath
-  };
-}
-function serializeProjectCollection(projects, activeProjectId) {
-  return {
-    activeProjectId,
-    projects: projects.map(serializeProjectSummary)
-  };
-}
-function serializeActivatedProject(project) {
-  return {
-    activeProjectId: project.id,
-    project: serializeProjectSummary(project)
-  };
-}
-function serializeTask(task) {
-  return {
-    description: task.description,
-    id: task.id,
-    projectId: task.projectId,
-    projectName: task.projectName,
-    status: task.status,
-    title: task.title,
-    updatedAt: task.updatedAt
-  };
-}
-function serializeLinkedTask(link) {
-  return {
-    comment: link.comment,
-    direction: link.direction,
-    projectName: link.projectName,
-    status: link.status,
-    taskId: link.taskId,
-    title: link.title
-  };
-}
-function serializeLinkedResource(link) {
-  return {
-    comment: link.comment,
-    name: link.name,
-    readHint: `\u0414\u043B\u044F \u0447\u0442\u0435\u043D\u0438\u044F \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0433\u043E \u0432\u044B\u0437\u043E\u0432\u0438 get_resource \u0441 id "${link.resourceId}".`,
-    resourceId: link.resourceId
-  };
-}
-function serializePlanComment(comment) {
-  return {
-    author: comment.author,
-    content: comment.content,
-    id: comment.id,
-    kind: comment.kind,
-    updatedAt: comment.updatedAt
-  };
-}
-function serializePlanQuestion(question) {
-  return {
-    answer: question.answer,
-    answeredAt: question.answeredAt,
-    content: question.content,
-    id: question.id,
-    updatedAt: question.updatedAt
-  };
-}
-function serializePlanBlock(plan, comments, questions) {
-  if (!plan) {
-    return { exists: false, contentMd: "", comments: [], questions: [] };
-  }
-  return {
-    exists: true,
-    contentMd: plan.contentMd,
-    source: plan.source,
-    updatedAt: plan.updatedAt,
-    comments: comments.map(serializePlanComment),
-    questions: questions.map(serializePlanQuestion)
-  };
-}
-function serializePlan(plan, taskId) {
-  if (!plan) {
-    return { contentMd: "", exists: false, taskId };
-  }
-  return {
-    contentMd: plan.contentMd,
-    exists: true,
-    source: plan.source,
-    taskId,
-    updatedAt: plan.updatedAt
-  };
-}
-function serializeTaskDetail(detail) {
-  return {
-    linkedResources: detail.linkedResources.map(serializeLinkedResource),
-    linkedTasks: detail.linkedTasks.map(serializeLinkedTask),
-    plan: serializePlanBlock(detail.plan, detail.planComments, detail.planQuestions),
-    project: serializeProjectSummary(detail.project),
-    task: serializeTask(detail.task)
-  };
-}
-function serializeTaskCollection(tasks, project) {
-  return {
-    project: project ? serializeProjectSummary(project) : null,
-    tasks: tasks.map(serializeTask)
-  };
-}
-function serializeResource(resource) {
-  return {
-    contentMd: resource.contentMd,
-    id: resource.id,
-    name: resource.name
-  };
-}
-function serializeResourceCollection(resources) {
-  return {
-    resources: resources.map(serializeResource)
-  };
-}
-function serializeTaskSnapshot(snapshot) {
-  return {
-    task: serializeTask(snapshot.task),
-    project: serializeProjectSummary(snapshot.project),
-    plan: serializePlanBlock(snapshot.plan, snapshot.planComments, snapshot.planQuestions),
-    linkedResources: snapshot.linkedResources.map(serializeLinkedResource),
-    linkedTasks: snapshot.linkedTasks.map(serializeLinkedTask)
-  };
-}
-var UNCHANGED = { unchanged: true };
-function serializeDeltaSnapshot(snapshot, since) {
-  const sinceDate = new Date(since).toISOString();
-  const taskUpdated = new Date(snapshot.task.updatedAt).getTime() > since;
-  const task = taskUpdated ? serializeTask(snapshot.task) : UNCHANGED;
-  const planUpdated = snapshot.plan !== null && new Date(snapshot.plan.updatedAt).getTime() > since;
-  const newComments = snapshot.planComments.filter((c) => new Date(c.updatedAt).getTime() > since);
-  const newQuestions = snapshot.planQuestions.filter((q) => new Date(q.updatedAt).getTime() > since);
-  const plan = planUpdated || newComments.length > 0 || newQuestions.length > 0 ? {
-    ...planUpdated && snapshot.plan ? { contentMd: snapshot.plan.contentMd, updatedAt: snapshot.plan.updatedAt } : UNCHANGED,
-    comments: newComments.length > 0 ? newComments.map(serializePlanComment) : UNCHANGED,
-    questions: newQuestions.length > 0 ? newQuestions.map(serializePlanQuestion) : UNCHANGED
-  } : UNCHANGED;
-  const newLinkedResources = snapshot.linkedResources.filter(
-    (r) => new Date(r.createdAt).getTime() > since
-  );
-  const linkedResources = newLinkedResources.length > 0 ? newLinkedResources.map(serializeLinkedResource) : UNCHANGED;
-  const newLinkedTasks = snapshot.linkedTasks.filter(
-    (t) => new Date(t.createdAt).getTime() > since
-  );
-  const linkedTasks = newLinkedTasks.length > 0 ? newLinkedTasks.map(serializeLinkedTask) : UNCHANGED;
-  return { delta: true, since: sinceDate, task, plan, linkedResources, linkedTasks };
-}
-function serializeAgentSession(session) {
-  return {
-    interactionCount: session.interactionCount,
-    lastContextVersion: session.lastContextVersion,
-    lastMode: session.lastMode,
-    lastUsedAt: session.lastUsedAt,
-    runId: session.runId,
-    state: session.state,
-    taskId: session.taskId
-  };
-}
-
-// src/main/mcp/agent-session.ts
-var SESSION_STALE_MS = 100 * 60 * 1e3;
-var SESSION_STALE_INTERACTIONS = 30;
-var SESSION_LOST_MS = 600 * 60 * 1e3;
-function createFreshSession(runId) {
-  return {
-    taskId: null,
-    lastContextVersion: null,
-    state: "fresh",
-    lastUsedAt: Date.now(),
-    interactionCount: 0,
-    lastMode: null,
-    runId
-  };
-}
-function generateRunId() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-function touchSession(session, patch) {
-  const now = Date.now();
-  let state = session.state;
-  let interactionCount = session.interactionCount;
-  if (session.lastUsedAt !== null) {
-    const idle = now - session.lastUsedAt;
-    if (idle >= SESSION_LOST_MS) {
-      state = "lost";
-      interactionCount = 0;
-    } else if (idle >= SESSION_STALE_MS) {
-      state = "stale";
-    }
-  }
-  if (state === "fresh" && interactionCount >= SESSION_STALE_INTERACTIONS) {
-    state = "stale";
-  }
-  return {
-    ...session,
-    state,
-    lastUsedAt: now,
-    lastContextVersion: now,
-    interactionCount: interactionCount + 1,
-    taskId: patch.taskId !== void 0 ? patch.taskId : session.taskId,
-    lastMode: patch.mode !== void 0 ? patch.mode : session.lastMode
-  };
-}
-function startWork(session, taskId) {
-  const now = Date.now();
-  return {
-    ...session,
-    taskId,
-    lastContextVersion: now,
-    lastUsedAt: now,
-    lastMode: "work",
-    state: "fresh",
-    interactionCount: session.interactionCount + 1
-  };
-}
-function toDeltaMode(session) {
-  const now = Date.now();
-  return {
-    ...session,
-    lastMode: "delta",
-    lastUsedAt: now,
-    lastContextVersion: now,
-    interactionCount: session.interactionCount + 1
-  };
-}
 
 // src/main/services/task-context.ts
 var TaskContext = class {
@@ -2667,7 +2373,74 @@ function createTaskContext(taskId, appService) {
   return new TaskContext(taskId, appService);
 }
 
-// src/main/mcp/create-mcp-server.ts
+// src/main/mcp/agent-session.ts
+var SESSION_STALE_MS = 100 * 60 * 1e3;
+var SESSION_STALE_INTERACTIONS = 30;
+var SESSION_LOST_MS = 600 * 60 * 1e3;
+function createFreshSession(runId) {
+  return {
+    taskId: null,
+    lastContextVersion: null,
+    state: "fresh",
+    lastUsedAt: Date.now(),
+    interactionCount: 0,
+    lastMode: null,
+    runId
+  };
+}
+function generateRunId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+function touchSession(session, patch) {
+  const now = Date.now();
+  let state = session.state;
+  let interactionCount = session.interactionCount;
+  if (session.lastUsedAt !== null) {
+    const idle = now - session.lastUsedAt;
+    if (idle >= SESSION_LOST_MS) {
+      state = "lost";
+      interactionCount = 0;
+    } else if (idle >= SESSION_STALE_MS) {
+      state = "stale";
+    }
+  }
+  if (state === "fresh" && interactionCount >= SESSION_STALE_INTERACTIONS) {
+    state = "stale";
+  }
+  return {
+    ...session,
+    state,
+    lastUsedAt: now,
+    lastContextVersion: now,
+    interactionCount: interactionCount + 1,
+    taskId: patch.taskId !== void 0 ? patch.taskId : session.taskId,
+    lastMode: patch.mode !== void 0 ? patch.mode : session.lastMode
+  };
+}
+function startWork(session, taskId) {
+  const now = Date.now();
+  return {
+    ...session,
+    taskId,
+    lastContextVersion: now,
+    lastUsedAt: now,
+    lastMode: "work",
+    state: "fresh",
+    interactionCount: session.interactionCount + 1
+  };
+}
+function toDeltaMode(session) {
+  const now = Date.now();
+  return {
+    ...session,
+    lastMode: "delta",
+    lastUsedAt: now,
+    lastContextVersion: now,
+    interactionCount: session.interactionCount + 1
+  };
+}
+
+// src/main/mcp/controller/mcp-controller-context.ts
 function textContent(text2) {
   return [{ type: "text", text: text2 }];
 }
@@ -2728,297 +2501,63 @@ function getProjectProfileHint(project) {
   }
   return `\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u043F\u0440\u043E\u0435\u043A\u0442\u0430 ${project.name} \u043D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D: ${missingFields.join(", ")}. \u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0437\u043E\u0432\u0438\u0442\u0435 update_project_profile.`;
 }
-function createMcpServer(appService, logger) {
-  const server = new McpServer(
-    {
-      name: "aitasker-mcp",
-      version: "1.0.0"
-    },
-    {
-      capabilities: {
-        logging: {}
-      }
-    }
-  );
-  let activeProjectId = null;
-  let agentSession = createFreshSession(generateRunId());
-  function touch(patch) {
-    agentSession = touchSession(agentSession, patch);
+var McpControllerContext = class {
+  constructor(appService, logger) {
+    this.appService = appService;
+    this.logger = logger;
   }
-  const requireActiveProject = async () => {
-    if (!activeProjectId) {
+  activeProjectId = null;
+  agentSession = createFreshSession(generateRunId());
+  getAppService() {
+    return this.appService;
+  }
+  getLogger() {
+    return this.logger;
+  }
+  getActiveProjectId() {
+    return this.activeProjectId;
+  }
+  setActiveProjectId(projectId) {
+    this.activeProjectId = projectId;
+  }
+  resetSession() {
+    this.agentSession = createFreshSession(generateRunId());
+  }
+  getAgentSession() {
+    return this.agentSession;
+  }
+  updateAgentSession(next) {
+    this.agentSession = next;
+  }
+  touchSession(patch) {
+    this.agentSession = touchSession(this.agentSession, patch);
+  }
+  async requireActiveProject() {
+    if (!this.activeProjectId) {
       throw new Error("\u041F\u0440\u043E\u0435\u043A\u0442 \u043D\u0435 \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D. \u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0437\u043E\u0432\u0438\u0442\u0435 activate_project.");
     }
-    const project = await appService.getProject(activeProjectId);
+    const project = await this.appService.getProject(this.activeProjectId);
     if (!project) {
-      activeProjectId = null;
+      this.activeProjectId = null;
       throw new Error("\u0410\u043A\u0442\u0438\u0432\u043D\u044B\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0435 \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439\u0442\u0435 \u043F\u0440\u043E\u0435\u043A\u0442 \u0437\u0430\u043D\u043E\u0432\u043E.");
     }
     return project;
-  };
-  const requirePreparedProject = async () => {
-    const project = await requireActiveProject();
+  }
+  async requirePreparedProject() {
+    const project = await this.requireActiveProject();
     if (!project.isProfileComplete) {
       throw new Error(getProjectProfileHint(project));
     }
     return project;
-  };
-  const requireTaskContext = async (taskId) => {
-    await requirePreparedProject();
-    return createTaskContext(taskId, appService);
-  };
-  server.registerTool(
-    "create_project",
-    {
-      description: "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u043D\u043E\u0432\u044B\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0434\u043B\u044F \u0434\u0430\u043B\u044C\u043D\u0435\u0439\u0448\u0435\u0439 \u0440\u0430\u0431\u043E\u0442\u044B \u0441 \u0437\u0430\u0434\u0430\u0447\u0430\u043C\u0438.",
-      inputSchema: {
-        name: z2.string().min(2).max(80)
-      }
-    },
-    async ({ name }) => {
-      logger.info("mcp", "Tool create_project called", { name });
-      const project = await appService.createProject({ name });
-      return {
-        content: textContent(`\u041F\u0440\u043E\u0435\u043A\u0442 ${project.name} \u0433\u043E\u0442\u043E\u0432. ${getProjectProfileHint(project)}`),
-        structuredContent: serializeActiveProject(project)
-      };
-    }
-  );
-  server.registerTool(
-    "list_projects",
-    {
-      description: "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0432\u0441\u0435\u0445 \u043F\u0440\u043E\u0435\u043A\u0442\u043E\u0432, \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445 \u0432 AITasker."
-    },
-    async () => {
-      logger.debug("mcp", "Tool list_projects called");
-      const projects = await appService.listProjects();
-      const response = serializeProjectCollection(projects, activeProjectId);
-      return {
-        content: textContent(JSON.stringify(response, null, 2)),
-        structuredContent: response
-      };
-    }
-  );
-  server.registerTool(
-    "find_projects",
-    {
-      description: "\u041D\u0430\u0439\u0442\u0438 \u043F\u0440\u043E\u0435\u043A\u0442 \u043F\u043E id, \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044E, \u043F\u0443\u0442\u0438 \u0438\u043B\u0438 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u044E \u043F\u0435\u0440\u0435\u0434 \u0430\u043A\u0442\u0438\u0432\u0430\u0446\u0438\u0435\u0439.",
-      inputSchema: {
-        query: z2.string().min(1),
-        limit: z2.number().int().min(1).max(20).optional()
-      }
-    },
-    async ({ limit, query }) => {
-      logger.debug("mcp", "Tool find_projects called", { query, limit: limit ?? 5 });
-      const projects = await appService.listProjects();
-      const matches = findProjectsByQuery(projects, query, limit ?? 5);
-      const response = serializeProjectCollection(matches, activeProjectId);
-      return {
-        content: textContent(JSON.stringify(response, null, 2)),
-        structuredContent: response
-      };
-    }
-  );
-  server.registerTool(
-    "activate_project",
-    {
-      description: "\u0410\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442 \u0432 \u0442\u0435\u043A\u0443\u0449\u0435\u0439 MCP-\u0441\u0435\u0441\u0441\u0438\u0438. \u041F\u043E\u0441\u043B\u0435 \u0430\u043A\u0442\u0438\u0432\u0430\u0446\u0438\u0438 \u0430\u0433\u0435\u043D\u0442 \u0434\u043E\u043B\u0436\u0435\u043D \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438 \u0437\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0447\u0435\u0440\u0435\u0437 update_project_profile.",
-      inputSchema: {
-        projectRef: z2.string().min(1)
-      }
-    },
-    async ({ projectRef }) => {
-      logger.info("mcp", "Tool activate_project called", { projectRef });
-      const projects = await appService.listProjects();
-      const resolved = resolveProjectReference(projects, projectRef);
-      if (!resolved.project && resolved.matches.length > 1) {
-        throw new Error(
-          `\u041D\u0430\u0439\u0434\u0435\u043D\u043E \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u043E\u0432 \u043F\u043E \u0437\u0430\u043F\u0440\u043E\u0441\u0443 "${projectRef}". \u0423\u0442\u043E\u0447\u043D\u0438\u0442\u0435 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 id \u0438\u043B\u0438 \u0442\u043E\u0447\u043D\u043E\u0435 \u0438\u043C\u044F.`
-        );
-      }
-      if (!resolved.project) {
-        throw new Error(`\u041F\u0440\u043E\u0435\u043A\u0442 "${projectRef}" \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
-      }
-      activeProjectId = resolved.project.id;
-      agentSession = createFreshSession(generateRunId());
-      return {
-        content: textContent("\u041F\u0440\u043E\u0435\u043A\u0442 \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D."),
-        structuredContent: serializeActivatedProject(resolved.project)
-      };
-    }
-  );
-  server.registerTool(
-    "get_active_project",
-    {
-      description: "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0442\u0435\u043A\u0443\u0449\u0435\u0439 MCP-\u0441\u0435\u0441\u0441\u0438\u0438 \u0432\u043C\u0435\u0441\u0442\u0435 \u0441 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u043E\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044F."
-    },
-    async () => {
-      logger.debug("mcp", "Tool get_active_project called");
-      const project = await requireActiveProject();
-      const response = serializeActiveProject(project);
-      return {
-        content: textContent(JSON.stringify(response, null, 2)),
-        structuredContent: response
-      };
-    }
-  );
-  server.registerTool(
-    "update_project_profile",
-    {
-      description: "\u0417\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u0438\u043B\u0438 \u0443\u0442\u043E\u0447\u043D\u0438\u0442\u044C \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430: \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435, \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435, \u043F\u0443\u0442\u044C, \u044F\u0437\u044B\u043A\u0438 \u0438 \u043F\u0443\u0442\u044C \u043A SKILL.md.",
-      inputSchema: {
-        name: z2.string().min(2).max(80).optional(),
-        description: z2.string().max(4e3).optional(),
-        rootPath: z2.string().min(1).max(500).nullable().optional(),
-        languages: z2.array(z2.string().min(1).max(40)).max(20).optional(),
-        skillFilePath: z2.string().min(1).max(500).nullable().optional(),
-        skillPrompt: z2.string().max(4e3).optional()
-      }
-    },
-    async (input) => {
-      const project = await requireActiveProject();
-      logger.info("mcp", "Tool update_project_profile called", { projectId: project.id });
-      const updated = await appService.updateProjectProfile({
-        projectId: project.id,
-        ...input
-      });
-      return {
-        content: textContent(`\u041A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 ${updated.name} \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430.`),
-        structuredContent: serializeActiveProject(updated)
-      };
-    }
-  );
-  server.registerTool(
-    "create_task",
-    {
-      description: "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u043D\u043E\u0432\u0443\u044E \u0437\u0430\u0434\u0430\u0447\u0443 \u0432 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u043C \u043F\u0440\u043E\u0435\u043A\u0442\u0435 \u0441 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u043E\u0439 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u043E\u0439.",
-      inputSchema: {
-        title: z2.string().min(3),
-        description: z2.string().min(12)
-      }
-    },
-    async ({ description, title }) => {
-      const project = await requirePreparedProject();
-      logger.info("mcp", "Tool create_task called", { projectId: project.id, title });
-      const detail = await appService.createTask({ title, description, projectId: project.id });
-      return {
-        content: textContent(`\u0417\u0430\u0434\u0430\u0447\u0430 ${detail.task.id} \u0441\u043E\u0437\u0434\u0430\u043D\u0430 \u0432 \u043F\u0440\u043E\u0435\u043A\u0442\u0435 ${project.name} \u0441\u043E \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u043C new.`),
-        structuredContent: serializeTaskDetail(detail)
-      };
-    }
-  );
-  server.registerTool(
-    "list_tasks",
-    {
-      description: "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u043E\u0439 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u043E\u0439."
-    },
-    async () => {
-      const project = await requirePreparedProject();
-      logger.debug("mcp", "Tool list_tasks called", { projectId: project.id });
-      const tasks = await appService.listTasks(project.id);
-      const response = serializeTaskCollection(tasks, project);
-      return {
-        content: textContent(JSON.stringify(response, null, 2)),
-        structuredContent: response
-      };
-    }
-  );
-  server.registerTool(
-    "find_tasks",
-    {
-      description: "\u041D\u0430\u0439\u0442\u0438 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u043E\u0439 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u043E\u0439 \u043F\u043E id, \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044E, \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u044E \u0438\u043B\u0438 \u0441\u0442\u0430\u0442\u0443\u0441\u0443.",
-      inputSchema: {
-        query: z2.string().min(1),
-        limit: z2.number().int().min(1).max(20).optional()
-      }
-    },
-    async ({ limit, query }) => {
-      const project = await requirePreparedProject();
-      logger.debug("mcp", "Tool find_tasks called", {
-        projectId: project.id,
-        query,
-        limit: limit ?? 5
-      });
-      const tasks = await appService.listTasks(project.id);
-      const matches = findTasksByQuery(tasks, query, limit ?? 5);
-      const response = serializeTaskCollection(matches, project);
-      return {
-        content: textContent(JSON.stringify(response, null, 2)),
-        structuredContent: response
-      };
-    }
-  );
-  server.registerTool(
-    "get_task",
-    {
-      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u0443\u044E \u0438\u043D\u0444\u043E\u0440\u043C\u0430\u0446\u0438\u044E \u043E \u0437\u0430\u0434\u0430\u0447\u0435 \u043F\u043E taskId: task, plan (\u0432\u043A\u043B\u044E\u0447\u0430\u044F contentMd \u0438 \u0432\u0441\u0435 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0438), linkedResources, linkedTasks.",
-      inputSchema: {
-        taskId: z2.string()
-      }
-    },
-    async ({ taskId }) => {
-      logger.debug("mcp", "Tool get_task called", { taskId });
-      const ctx = createTaskContext(taskId, appService);
-      const snapshot = await ctx.getSnapshot();
-      const response = serializeTaskSnapshot(snapshot);
-      return {
-        content: textContent(JSON.stringify(response, null, 2)),
-        structuredContent: response
-      };
-    }
-  );
-  server.registerTool(
-    "sync_task",
-    {
-      description: "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443 \u0441 \u0441\u0435\u0441\u0441\u0438\u0435\u0439. \u041F\u0435\u0440\u0432\u044B\u0439 \u0432\u044B\u0437\u043E\u0432 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u043F\u043E\u043B\u043D\u044B\u0439 \u0441\u043D\u0430\u043F\u0448\u043E\u0442 \u0438 \u043F\u0435\u0440\u0435\u0432\u043E\u0434\u0438\u0442 \u0441\u0435\u0441\u0441\u0438\u044E \u0432 work-\u0440\u0435\u0436\u0438\u043C. \u041F\u043E\u0432\u0442\u043E\u0440\u043D\u044B\u0435 \u0432\u044B\u0437\u043E\u0432\u044B \u0432 \u0440\u0430\u043C\u043A\u0430\u0445 \u0442\u043E\u0439 \u0436\u0435 \u0441\u0435\u0441\u0441\u0438\u0438 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u044E\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0441 \u043C\u043E\u043C\u0435\u043D\u0442\u0430 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u0432\u044B\u0437\u043E\u0432\u0430 (delta-\u0440\u0435\u0436\u0438\u043C). \u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
-      inputSchema: {
-        taskId: z2.string()
-      }
-    },
-    async ({ taskId }) => {
-      logger.debug("mcp", "Tool sync_task called", { taskId, mode: agentSession.lastMode, sessionTaskId: agentSession.taskId });
-      const ctx = await requireTaskContext(taskId);
-      const isDelta = agentSession.lastMode !== null && agentSession.taskId === taskId && agentSession.lastContextVersion !== null;
-      if (isDelta) {
-        const since = agentSession.lastContextVersion;
-        const snapshot2 = await ctx.getSnapshot();
-        agentSession = toDeltaMode(agentSession);
-        const response2 = serializeDeltaSnapshot(snapshot2, since);
-        return {
-          content: textContent(JSON.stringify(response2, null, 2)),
-          structuredContent: response2
-        };
-      }
-      const snapshot = await ctx.getSnapshot();
-      agentSession = startWork(agentSession, taskId);
-      const response = serializeTaskSnapshot(snapshot);
-      return {
-        content: textContent(JSON.stringify(response, null, 2)),
-        structuredContent: response
-      };
-    }
-  );
-  server.registerTool(
-    "update_task_status",
-    {
-      description: "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430. \u0414\u043E\u043F\u0443\u0441\u0442\u0438\u043C\u044B\u0435 \u0441\u0442\u0430\u0442\u0443\u0441\u044B: new, planning, requires_clarification, implementation, testing, completed.",
-      inputSchema: {
-        taskId: z2.string(),
-        status: z2.enum(["new", "planning", "requires_clarification", "implementation", "testing", "completed"])
-      }
-    },
-    async ({ status, taskId }) => {
-      const ctx = await requireTaskContext(taskId);
-      touch({ taskId });
-      logger.info("mcp", "Tool update_task_status called", { taskId, status });
-      await ctx.updateStatus(status);
-      const snapshot = await ctx.getSnapshot();
-      return {
-        content: textContent(`\u0421\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u0434\u0430\u0447\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D \u043D\u0430 ${status}.`),
-        structuredContent: serializeTaskSnapshot(snapshot)
-      };
-    }
-  );
+  }
+  async requireTaskContext(taskId) {
+    await this.requirePreparedProject();
+    return createTaskContext(taskId, this.appService);
+  }
+};
+
+// src/main/mcp/actions/plan-actions.ts
+function registerPlanActions(server, context) {
   server.registerTool(
     "answer_plan_question",
     {
@@ -3030,14 +2569,12 @@ function createMcpServer(appService, logger) {
       }
     },
     async ({ answer, questionId, taskId }) => {
-      const ctx = await requireTaskContext(taskId);
-      touch({ taskId });
-      logger.info("mcp", "Tool answer_plan_question called", { questionId, taskId });
-      await ctx.answerQuestion(questionId, answer);
-      const snapshot = await ctx.getSnapshot();
+      const taskContext = await context.requireTaskContext(taskId);
+      context.getLogger().info("mcp", "Tool answer_plan_question called", { questionId, taskId });
+      await taskContext.answerQuestion(questionId, answer);
+      context.touchSession({ taskId });
       return {
-        content: textContent("\u041E\u0442\u0432\u0435\u0442 \u043D\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0439 \u0432\u043E\u043F\u0440\u043E\u0441 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D."),
-        structuredContent: serializeTaskSnapshot(snapshot)
+        content: textContent("\u041E\u0442\u0432\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D.")
       };
     }
   );
@@ -3051,16 +2588,14 @@ function createMcpServer(appService, logger) {
       }
     },
     async ({ questions, taskId }) => {
-      const ctx = await requireTaskContext(taskId);
-      touch({ taskId });
-      logger.info("mcp", "Tool add_plan_questions called", { taskId, count: questions.length });
+      const taskContext = await context.requireTaskContext(taskId);
+      context.getLogger().info("mcp", "Tool add_plan_questions called", { taskId, count: questions.length });
       for (const content of questions) {
-        await ctx.addQuestion(content);
+        await taskContext.addQuestion(content);
       }
-      const snapshot = await ctx.getSnapshot();
+      context.touchSession({ taskId });
       return {
-        content: textContent(`\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432: ${questions.length}.`),
-        structuredContent: serializeTaskSnapshot(snapshot)
+        content: textContent(`\u0412\u043E\u043F\u0440\u043E\u0441\u044B \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u044B: ${questions.length}.`)
       };
     }
   );
@@ -3075,17 +2610,15 @@ function createMcpServer(appService, logger) {
       }
     },
     async ({ contentMd, openQuestions, taskId }) => {
-      const ctx = await requireTaskContext(taskId);
-      touch({ taskId });
-      logger.info("mcp", "Tool save_plan called", {
+      const taskContext = await context.requireTaskContext(taskId);
+      context.getLogger().info("mcp", "Tool save_plan called", {
         taskId,
         openQuestionsCount: openQuestions?.length ?? 0
       });
-      await ctx.savePlan(contentMd, openQuestions, "agent");
-      const plan = await ctx.getPlan();
+      await taskContext.savePlan(contentMd, openQuestions, "agent");
+      context.touchSession({ taskId });
       return {
-        content: textContent("\u041F\u043B\u0430\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D."),
-        structuredContent: serializePlan(plan, taskId)
+        content: textContent("\u041F\u043B\u0430\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D.")
       };
     }
   );
@@ -3099,14 +2632,12 @@ function createMcpServer(appService, logger) {
       }
     },
     async ({ content, taskId }) => {
-      const ctx = await requireTaskContext(taskId);
-      touch({ taskId });
-      logger.info("mcp", "Tool append_plan_extension called", { taskId });
-      await ctx.appendExtension(content);
-      const plan = await ctx.getPlan();
+      const taskContext = await context.requireTaskContext(taskId);
+      context.getLogger().info("mcp", "Tool append_plan_extension called", { taskId });
+      await taskContext.appendExtension(content);
+      context.touchSession({ taskId });
       return {
-        content: textContent("\u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u043F\u043B\u0430\u043D\u0430 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E."),
-        structuredContent: serializePlan(plan, taskId)
+        content: textContent("\u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E.")
       };
     }
   );
@@ -3120,14 +2651,12 @@ function createMcpServer(appService, logger) {
       }
     },
     async ({ content, taskId }) => {
-      const ctx = await requireTaskContext(taskId);
-      touch({ taskId });
-      logger.info("mcp", "Tool append_plan_improvement called", { taskId });
-      await ctx.appendImprovement(content);
-      const plan = await ctx.getPlan();
+      const taskContext = await context.requireTaskContext(taskId);
+      context.getLogger().info("mcp", "Tool append_plan_improvement called", { taskId });
+      await taskContext.appendImprovement(content);
+      context.touchSession({ taskId });
       return {
-        content: textContent("\u0414\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430 \u043F\u043B\u0430\u043D\u0430 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0430."),
-        structuredContent: serializePlan(plan, taskId)
+        content: textContent("\u0414\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0430.")
       };
     }
   );
@@ -3142,28 +2671,213 @@ function createMcpServer(appService, logger) {
       }
     },
     async ({ contentMd, openQuestions, taskId }) => {
-      const ctx = await requireTaskContext(taskId);
-      touch({ taskId });
-      logger.info("mcp", "Tool consolidate_plan_discussion called", {
+      const taskContext = await context.requireTaskContext(taskId);
+      context.getLogger().info("mcp", "Tool consolidate_plan_discussion called", {
         taskId,
         openQuestionsCount: openQuestions?.length ?? 0
       });
-      await ctx.consolidateDiscussion(contentMd, openQuestions, "agent");
-      const plan = await ctx.getPlan();
+      await taskContext.consolidateDiscussion(contentMd, openQuestions, "agent");
+      context.touchSession({ taskId });
       return {
-        content: textContent("\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430 \u043F\u043E \u043F\u043B\u0430\u043D\u0443 \u0441\u0436\u0430\u0442\u0430 \u0432 \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043F\u043B\u0430\u043D \u0438 \u043E\u0447\u0438\u0449\u0435\u043D\u0430 \u0438\u0437 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0445 \u0431\u043B\u043E\u043A\u043E\u0432."),
-        structuredContent: serializePlan(plan, taskId)
+        content: textContent("\u041E\u0431\u0441\u0443\u0436\u0434\u0435\u043D\u0438\u0435 \u0441\u0436\u0430\u0442\u043E.")
+      };
+    }
+  );
+}
+
+// src/main/mcp/actions/project-actions.ts
+import { z as z3 } from "zod";
+
+// src/main/mcp/mcp-response-presenters.ts
+function serializeProjectSummary(project) {
+  return {
+    id: project.id,
+    isProfileComplete: project.isProfileComplete,
+    name: project.name
+  };
+}
+function serializeActiveProject(project) {
+  return {
+    description: project.description,
+    id: project.id,
+    isProfileComplete: project.isProfileComplete,
+    languages: project.languages,
+    name: project.name,
+    rootPath: project.rootPath,
+    skillFilePath: project.skillFilePath
+  };
+}
+function serializeProjectCollection(projects, activeProjectId) {
+  return {
+    activeProjectId,
+    projects: projects.map(serializeProjectSummary)
+  };
+}
+function serializeActivatedProject(project) {
+  return {
+    activeProjectId: project.id,
+    project: serializeProjectSummary(project)
+  };
+}
+function serializeTask(task) {
+  return {
+    description: task.description,
+    id: task.id,
+    projectId: task.projectId,
+    projectName: task.projectName,
+    status: task.status,
+    title: task.title,
+    updatedAt: task.updatedAt
+  };
+}
+function serializeLinkedTask(link) {
+  return {
+    comment: link.comment,
+    direction: link.direction,
+    projectName: link.projectName,
+    status: link.status,
+    taskId: link.taskId,
+    title: link.title
+  };
+}
+function serializeLinkedResource(link) {
+  return {
+    comment: link.comment,
+    name: link.name,
+    readHint: `\u0414\u043B\u044F \u0447\u0442\u0435\u043D\u0438\u044F \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0433\u043E \u0432\u044B\u0437\u043E\u0432\u0438 get_resource \u0441 id "${link.resourceId}".`,
+    resourceId: link.resourceId
+  };
+}
+function serializePlanComment(comment) {
+  return {
+    author: comment.author,
+    content: comment.content,
+    id: comment.id,
+    kind: comment.kind,
+    updatedAt: comment.updatedAt
+  };
+}
+function serializePlanQuestion(question) {
+  return {
+    answer: question.answer,
+    answeredAt: question.answeredAt,
+    content: question.content,
+    id: question.id,
+    updatedAt: question.updatedAt
+  };
+}
+function serializePlanBlock(plan, comments, questions) {
+  if (!plan) {
+    return { exists: false, contentMd: "", comments: [], questions: [] };
+  }
+  return {
+    exists: true,
+    contentMd: plan.contentMd,
+    source: plan.source,
+    updatedAt: plan.updatedAt,
+    comments: comments.map(serializePlanComment),
+    questions: questions.map(serializePlanQuestion)
+  };
+}
+function serializeTaskDetail(detail) {
+  return {
+    linkedResources: detail.linkedResources.map(serializeLinkedResource),
+    linkedTasks: detail.linkedTasks.map(serializeLinkedTask),
+    plan: serializePlanBlock(detail.plan, detail.planComments, detail.planQuestions),
+    project: serializeProjectSummary(detail.project),
+    task: serializeTask(detail.task)
+  };
+}
+function serializeTaskCollection(tasks, project) {
+  return {
+    project: project ? serializeProjectSummary(project) : null,
+    tasks: tasks.map(serializeTask)
+  };
+}
+function serializeResource(resource) {
+  return {
+    contentMd: resource.contentMd,
+    id: resource.id,
+    name: resource.name
+  };
+}
+function serializeResourceCollection(resources) {
+  return {
+    resources: resources.map(serializeResource)
+  };
+}
+function serializeTaskSnapshot(snapshot) {
+  return {
+    task: serializeTask(snapshot.task),
+    project: serializeProjectSummary(snapshot.project),
+    plan: serializePlanBlock(snapshot.plan, snapshot.planComments, snapshot.planQuestions),
+    linkedResources: snapshot.linkedResources.map(serializeLinkedResource),
+    linkedTasks: snapshot.linkedTasks.map(serializeLinkedTask)
+  };
+}
+var UNCHANGED = { unchanged: true };
+function serializeDeltaSnapshot(snapshot, since) {
+  const sinceDate = new Date(since).toISOString();
+  const taskUpdated = new Date(snapshot.task.updatedAt).getTime() > since;
+  const task = taskUpdated ? serializeTask(snapshot.task) : UNCHANGED;
+  const planUpdated = snapshot.plan !== null && new Date(snapshot.plan.updatedAt).getTime() > since;
+  const newComments = snapshot.planComments.filter((c) => new Date(c.updatedAt).getTime() > since);
+  const newQuestions = snapshot.planQuestions.filter((q) => new Date(q.updatedAt).getTime() > since);
+  const plan = planUpdated || newComments.length > 0 || newQuestions.length > 0 ? {
+    ...planUpdated && snapshot.plan ? { contentMd: snapshot.plan.contentMd, updatedAt: snapshot.plan.updatedAt } : UNCHANGED,
+    comments: newComments.length > 0 ? newComments.map(serializePlanComment) : UNCHANGED,
+    questions: newQuestions.length > 0 ? newQuestions.map(serializePlanQuestion) : UNCHANGED
+  } : UNCHANGED;
+  const newLinkedResources = snapshot.linkedResources.filter(
+    (r) => new Date(r.createdAt).getTime() > since
+  );
+  const linkedResources = newLinkedResources.length > 0 ? newLinkedResources.map(serializeLinkedResource) : UNCHANGED;
+  const newLinkedTasks = snapshot.linkedTasks.filter(
+    (t) => new Date(t.createdAt).getTime() > since
+  );
+  const linkedTasks = newLinkedTasks.length > 0 ? newLinkedTasks.map(serializeLinkedTask) : UNCHANGED;
+  return { delta: true, since: sinceDate, task, plan, linkedResources, linkedTasks };
+}
+function serializeAgentSession(session) {
+  return {
+    interactionCount: session.interactionCount,
+    lastContextVersion: session.lastContextVersion,
+    lastMode: session.lastMode,
+    lastUsedAt: session.lastUsedAt,
+    runId: session.runId,
+    state: session.state,
+    taskId: session.taskId
+  };
+}
+
+// src/main/mcp/actions/project-actions.ts
+function registerProjectActions(server, context) {
+  server.registerTool(
+    "create_project",
+    {
+      description: "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u043D\u043E\u0432\u044B\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0434\u043B\u044F \u0434\u0430\u043B\u044C\u043D\u0435\u0439\u0448\u0435\u0439 \u0440\u0430\u0431\u043E\u0442\u044B \u0441 \u0437\u0430\u0434\u0430\u0447\u0430\u043C\u0438.",
+      inputSchema: {
+        name: z3.string().min(2).max(80)
+      }
+    },
+    async ({ name }) => {
+      context.getLogger().info("mcp", "Tool create_project called", { name });
+      const project = await context.getAppService().createProject({ name });
+      return {
+        content: textContent("\u041F\u0440\u043E\u0435\u043A\u0442 \u0441\u043E\u0437\u0434\u0430\u043D."),
+        structuredContent: serializeActiveProject(project)
       };
     }
   );
   server.registerTool(
-    "get_session_state",
+    "list_projects",
     {
-      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0435\u0435 \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 MCP-\u0441\u0435\u0441\u0441\u0438\u0438: \u043D\u0430\u0434 \u043A\u0430\u043A\u043E\u0439 \u0437\u0430\u0434\u0430\u0447\u0435\u0439 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0430\u0433\u0435\u043D\u0442, \u043D\u0430\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0441\u0432\u0435\u0436 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0438 \u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0448\u0430\u0433\u043E\u0432 \u0443\u0436\u0435 \u0441\u0434\u0435\u043B\u0430\u043D\u043E. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u043F\u0435\u0440\u0435\u0434 \u043D\u0430\u0447\u0430\u043B\u043E\u043C \u0440\u0430\u0431\u043E\u0442\u044B \u0441 \u0437\u0430\u0434\u0430\u0447\u0435\u0439, \u0447\u0442\u043E\u0431\u044B \u043F\u043E\u043D\u044F\u0442\u044C, \u043D\u0443\u0436\u043D\u043E \u043B\u0438 \u043F\u0435\u0440\u0435\u0447\u0438\u0442\u044B\u0432\u0430\u0442\u044C \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442."
+      description: "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0432\u0441\u0435\u0445 \u043F\u0440\u043E\u0435\u043A\u0442\u043E\u0432, \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445 \u0432 AITasker."
     },
     async () => {
-      logger.debug("mcp", "Tool get_session_state called");
-      const response = serializeAgentSession(agentSession);
+      context.getLogger().debug("mcp", "Tool list_projects called");
+      const projects = await context.getAppService().listProjects();
+      const response = serializeProjectCollection(projects, context.getActiveProjectId());
       return {
         content: textContent(JSON.stringify(response, null, 2)),
         structuredContent: response
@@ -3171,35 +2885,19 @@ function createMcpServer(appService, logger) {
     }
   );
   server.registerTool(
-    "create_resource",
+    "find_projects",
     {
-      description: "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u043D\u043E\u0432\u044B\u0439 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0439 \u0440\u0435\u0441\u0443\u0440\u0441 (Markdown-\u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442) \u043D\u0435 \u043F\u0440\u0438\u0432\u044F\u0437\u0430\u043D\u043D\u044B\u0439 \u043A \u043F\u0440\u043E\u0435\u043A\u0442\u0443.",
+      description: "\u041D\u0430\u0439\u0442\u0438 \u043F\u0440\u043E\u0435\u043A\u0442 \u043F\u043E id, \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044E, \u043F\u0443\u0442\u0438 \u0438\u043B\u0438 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u044E \u043F\u0435\u0440\u0435\u0434 \u0430\u043A\u0442\u0438\u0432\u0430\u0446\u0438\u0435\u0439.",
       inputSchema: {
-        name: z2.string().min(1).max(200),
-        contentMd: z2.string().optional()
+        query: z3.string().min(1),
+        limit: z3.number().int().min(1).max(20).optional()
       }
     },
-    async ({ name, contentMd }) => {
-      logger.info("mcp", "Tool create_resource called", { name });
-      const resource = await appService.createResource({ name, contentMd });
-      return {
-        content: textContent(`\u0420\u0435\u0441\u0443\u0440\u0441 "${resource.name}" \u0441\u043E\u0437\u0434\u0430\u043D \u0441 id ${resource.id}.`),
-        structuredContent: serializeResource(resource)
-      };
-    }
-  );
-  server.registerTool(
-    "get_resource",
-    {
-      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0440\u0435\u0441\u0443\u0440\u0441 \u043F\u043E id.",
-      inputSchema: {
-        id: z2.string()
-      }
-    },
-    async ({ id }) => {
-      logger.debug("mcp", "Tool get_resource called", { id });
-      const resource = await appService.getResource(id);
-      const response = serializeResource(resource);
+    async ({ limit, query }) => {
+      context.getLogger().debug("mcp", "Tool find_projects called", { query, limit: limit ?? 5 });
+      const projects = await context.getAppService().listProjects();
+      const matches = findProjectsByQuery(projects, query, limit ?? 5);
+      const response = serializeProjectCollection(matches, context.getActiveProjectId());
       return {
         content: textContent(JSON.stringify(response, null, 2)),
         structuredContent: response
@@ -3207,14 +2905,42 @@ function createMcpServer(appService, logger) {
     }
   );
   server.registerTool(
-    "list_resources",
+    "activate_project",
     {
-      description: "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0432\u0441\u0435\u0445 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0445 \u0440\u0435\u0441\u0443\u0440\u0441\u043E\u0432."
+      description: "\u0410\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442 \u0432 \u0442\u0435\u043A\u0443\u0449\u0435\u0439 MCP-\u0441\u0435\u0441\u0441\u0438\u0438. \u041F\u043E\u0441\u043B\u0435 \u0430\u043A\u0442\u0438\u0432\u0430\u0446\u0438\u0438 \u0430\u0433\u0435\u043D\u0442 \u0434\u043E\u043B\u0436\u0435\u043D \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438 \u0437\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0447\u0435\u0440\u0435\u0437 update_project_profile.",
+      inputSchema: {
+        projectRef: z3.string().min(1)
+      }
+    },
+    async ({ projectRef }) => {
+      context.getLogger().info("mcp", "Tool activate_project called", { projectRef });
+      const projects = await context.getAppService().listProjects();
+      const resolved = resolveProjectReference(projects, projectRef);
+      if (!resolved.project && resolved.matches.length > 1) {
+        throw new Error(
+          `\u041D\u0430\u0439\u0434\u0435\u043D\u043E \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u043E\u0432 \u043F\u043E \u0437\u0430\u043F\u0440\u043E\u0441\u0443 "${projectRef}". \u0423\u0442\u043E\u0447\u043D\u0438\u0442\u0435 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 id \u0438\u043B\u0438 \u0442\u043E\u0447\u043D\u043E\u0435 \u0438\u043C\u044F.`
+        );
+      }
+      if (!resolved.project) {
+        throw new Error(`\u041F\u0440\u043E\u0435\u043A\u0442 "${projectRef}" \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.`);
+      }
+      context.setActiveProjectId(resolved.project.id);
+      context.resetSession();
+      return {
+        content: textContent("\u041F\u0440\u043E\u0435\u043A\u0442 \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D."),
+        structuredContent: serializeActivatedProject(resolved.project)
+      };
+    }
+  );
+  server.registerTool(
+    "get_active_project",
+    {
+      description: "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0442\u0435\u043A\u0443\u0449\u0435\u0439 MCP-\u0441\u0435\u0441\u0441\u0438\u0438 \u0432\u043C\u0435\u0441\u0442\u0435 \u0441 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u043E\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044F."
     },
     async () => {
-      logger.debug("mcp", "Tool list_resources called");
-      const resources = await appService.listResources();
-      const response = serializeResourceCollection(resources);
+      context.getLogger().debug("mcp", "Tool get_active_project called");
+      const project = await context.requireActiveProject();
+      const response = serializeActiveProject(project);
       return {
         content: textContent(JSON.stringify(response, null, 2)),
         structuredContent: response
@@ -3222,55 +2948,100 @@ function createMcpServer(appService, logger) {
     }
   );
   server.registerTool(
-    "update_resource",
+    "update_project_profile",
     {
-      description: "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0438\u043B\u0438 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u0440\u0435\u0441\u0443\u0440\u0441\u0430.",
+      description: "\u0417\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u0438\u043B\u0438 \u0443\u0442\u043E\u0447\u043D\u0438\u0442\u044C \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430: \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435, \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435, \u043F\u0443\u0442\u044C, \u044F\u0437\u044B\u043A\u0438 \u0438 \u043F\u0443\u0442\u044C \u043A SKILL.md.",
       inputSchema: {
-        id: z2.string(),
-        name: z2.string().min(1).max(200).optional(),
-        contentMd: z2.string().optional()
+        name: z3.string().min(2).max(80).optional(),
+        description: z3.string().max(4e3).optional(),
+        rootPath: z3.string().min(1).max(500).nullable().optional(),
+        languages: z3.array(z3.string().min(1).max(40)).max(20).optional(),
+        skillFilePath: z3.string().min(1).max(500).nullable().optional(),
+        skillPrompt: z3.string().max(4e3).optional()
       }
     },
-    async ({ id, name, contentMd }) => {
-      logger.info("mcp", "Tool update_resource called", { id });
-      const resource = await appService.updateResource({ id, name, contentMd });
+    async (input) => {
+      const project = await context.requireActiveProject();
+      context.getLogger().info("mcp", "Tool update_project_profile called", { projectId: project.id });
+      await context.getAppService().updateProjectProfile({
+        projectId: project.id,
+        ...input
+      });
       return {
-        content: textContent(`\u0420\u0435\u0441\u0443\u0440\u0441 "${resource.name}" \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D.`),
-        structuredContent: serializeResource(resource)
+        content: textContent("\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D.")
       };
     }
   );
-  server.registerTool(
-    "find_resources",
-    {
-      description: "\u041D\u0430\u0439\u0442\u0438 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0435 \u0440\u0435\u0441\u0443\u0440\u0441\u044B \u043F\u043E \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044E \u0438\u043B\u0438 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u043C\u0443.",
-      inputSchema: {
-        query: z2.string().min(1),
-        limit: z2.number().int().min(1).max(20).optional()
-      }
-    },
-    async ({ query, limit }) => {
-      logger.debug("mcp", "Tool find_resources called", { query });
-      const resources = await appService.listResources();
-      const normalizedQuery = query.trim().toLocaleLowerCase("ru-RU");
-      const matches = resources.filter(
-        (r) => [r.id, r.name, r.contentMd].join(" ").toLocaleLowerCase("ru-RU").includes(normalizedQuery)
-      ).slice(0, limit ?? 5);
-      const response = serializeResourceCollection(matches);
-      return {
-        content: textContent(JSON.stringify(response, null, 2)),
-        structuredContent: response
-      };
-    }
-  );
+}
+
+// src/main/mcp/actions/prompt-actions.ts
+import { z as z4 } from "zod";
+
+// src/renderer/components/mcp-prompt-presets.ts
+function buildRegisteredPromptMessage(promptId, args) {
+  if (promptId === "plan_task") {
+    return `\u0412\u044B\u043F\u043E\u043B\u043D\u0438 \u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 AITasker \u0447\u0435\u0440\u0435\u0437 MCP aitasker.
+
+\u041F\u0440\u043E\u0435\u043A\u0442: ${args.projectRef}
+\u0417\u0430\u0434\u0430\u0447\u0430: ${args.taskRef ?? ""}
+
+\u0428\u0430\u0433\u0438:
+1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project.
+2. \u041D\u0430\u0439\u0434\u0438 \u0437\u0430\u0434\u0430\u0447\u0443 \u0438 \u043F\u043E\u043B\u0443\u0447\u0438 \u0435\u0451 \u0434\u0430\u043D\u043D\u044B\u0435 \u0447\u0435\u0440\u0435\u0437 sync_task \u2014 \u044D\u0442\u043E \u043F\u0435\u0440\u0435\u0432\u0435\u0434\u0451\u0442 \u0441\u0435\u0441\u0441\u0438\u044E \u0432 work-\u0440\u0435\u0436\u0438\u043C.
+3. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 linkedResources \u0447\u0435\u0440\u0435\u0437 get_resource \u0435\u0441\u043B\u0438 \u043E\u043D\u0438 \u0432\u043B\u0438\u044F\u044E\u0442 \u043D\u0430 \u0437\u0430\u0434\u0430\u0447\u0443.
+4. \u0415\u0441\u043B\u0438 \u0435\u0441\u0442\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B (plan.questions) \u2014 \u043E\u0442\u0432\u0435\u0442\u044C \u0447\u0435\u0440\u0435\u0437 answer_plan_question \u0438\u043B\u0438 \u043E\u0441\u0442\u0430\u0432\u044C \u043D\u0435\u0440\u0435\u0448\u0451\u043D\u043D\u044B\u0435 \u0432 openQuestions \u043F\u0440\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0438.
+5. \u0421\u043E\u0441\u0442\u0430\u0432\u044C \u043F\u043B\u0430\u043D \u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u0447\u0435\u0440\u0435\u0437 save_plan, \u043F\u0435\u0440\u0435\u0434\u0430\u0432 openQuestions \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u043C\u0430\u0441\u0441\u0438\u0432\u043E\u043C.
+6. \u041F\u0435\u0440\u0435\u0432\u0435\u0434\u0438 \u0441\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 planning, \u0437\u0430\u0442\u0435\u043C \u0432 implementation \u0447\u0435\u0440\u0435\u0437 update_task_status.
+
+${args.instructions?.trim() ? `\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${args.instructions.trim()}` : ""}
+
+\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442 \u0432 AITasker \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`;
+  }
+  if (promptId === "compress_plan_discussion") {
+    return `\u0421\u043E\u0436\u043C\u0438 \u043E\u0431\u0441\u0443\u0436\u0434\u0435\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0432 AITasker \u0447\u0435\u0440\u0435\u0437 MCP aitasker.
+
+\u041F\u0440\u043E\u0435\u043A\u0442: ${args.projectRef}
+\u0417\u0430\u0434\u0430\u0447\u0430: ${args.taskRef ?? ""}
+
+\u0428\u0430\u0433\u0438:
+1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project.
+2. \u041F\u043E\u043B\u0443\u0447\u0438 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0447\u0435\u0440\u0435\u0437 sync_task.
+3. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u0432\u0441\u0435 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0438 (plan.comments) \u0438 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B (plan.questions).
+4. \u041F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 linkedResources \u0447\u0435\u0440\u0435\u0437 get_resource \u0435\u0441\u043B\u0438 \u043D\u0443\u0436\u043D\u044B \u0434\u043B\u044F \u043F\u043E\u043D\u0438\u043C\u0430\u043D\u0438\u044F.
+5. \u0415\u0441\u043B\u0438 \u043D\u0430 \u0432\u043E\u043F\u0440\u043E\u0441\u044B \u0435\u0441\u0442\u044C \u043E\u0442\u0432\u0435\u0442\u044B \u2014 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u0447\u0435\u0440\u0435\u0437 answer_plan_question.
+6. \u0421\u043E\u0431\u0435\u0440\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0438\u0437 \u0431\u0430\u0437\u043E\u0432\u043E\u0433\u043E \u043F\u043B\u0430\u043D\u0430 + \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0438 + \u0440\u0435\u0448\u0451\u043D\u043D\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B.
+7. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u0447\u0435\u0440\u0435\u0437 consolidate_plan_discussion, \u043D\u0435\u0440\u0435\u0448\u0451\u043D\u043D\u044B\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u044B \u043F\u0435\u0440\u0435\u0434\u0430\u0439 \u0432 openQuestions.
+
+${args.instructions?.trim() ? `\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${args.instructions.trim()}` : ""}
+
+\u041D\u0435 \u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0439\u0441\u044F \u043D\u0430 \u0430\u043D\u0430\u043B\u0438\u0437\u0435. \u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D\u043D\u044B\u0439 \u043F\u043B\u0430\u043D \u0434\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u043E\u0442\u0432\u0435\u0442\u0430.`;
+  }
+  return `\u041F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u044C \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u0438 SKILL.md \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0432 AITasker \u0447\u0435\u0440\u0435\u0437 MCP aitasker.
+
+\u041F\u0440\u043E\u0435\u043A\u0442: ${args.projectRef}
+${args.skillPath?.trim() ? `\u041F\u0443\u0442\u044C \u043A SKILL.md: ${args.skillPath.trim()}` : ""}
+
+\u0428\u0430\u0433\u0438:
+1. \u0410\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0447\u0435\u0440\u0435\u0437 activate_project \u0438 \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0439 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443.
+2. \u041E\u043F\u0440\u0435\u0434\u0435\u043B\u0438 \u043F\u0443\u0442\u044C \u043A SKILL.md \u0438\u0437 skillFilePath \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0438\u043B\u0438 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 <rootPath>/SKILL.md.
+3. \u0421\u043E\u0437\u0434\u0430\u0439 \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u0438 \u0444\u0430\u0439\u043B SKILL.md \u0441 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435\u043C \u0441\u0442\u0435\u043A\u0430, \u043A\u043E\u043D\u0432\u0435\u043D\u0446\u0438\u0439 \u0438 \u043E\u0441\u043E\u0431\u0435\u043D\u043D\u043E\u0441\u0442\u0435\u0439 \u043F\u0440\u043E\u0435\u043A\u0442\u0430.
+4. \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u043F\u0443\u0442\u044C \u043A \u0444\u0430\u0439\u043B\u0443 \u0447\u0435\u0440\u0435\u0437 update_project_profile.
+
+${args.instructions?.trim() ? `\u0414\u043E\u043F. \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438: ${args.instructions.trim()}` : ""}
+
+\u0415\u0441\u043B\u0438 \u043F\u0443\u0442\u044C \u043D\u0435\u043B\u044C\u0437\u044F \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u044C \u043D\u0430\u0434\u0451\u0436\u043D\u043E, \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0441\u044C \u0438 \u0437\u0430\u043F\u0440\u043E\u0441\u0438 \u0435\u0433\u043E \u0443 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F.`;
+}
+
+// src/main/mcp/actions/prompt-actions.ts
+function registerPromptActions(server) {
   server.registerPrompt(
     "plan_task",
     {
       description: "\u041F\u0440\u043E\u0432\u0435\u0441\u0442\u0438 planning \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u0437 AITasker \u0432\u043D\u0443\u0442\u0440\u0438 \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C Markdown-\u043F\u043B\u0430\u043D \u043E\u0431\u0440\u0430\u0442\u043D\u043E.",
       argsSchema: {
-        projectRef: z2.string().min(1).describe("Id \u0438\u043B\u0438 \u0447\u0438\u0442\u0430\u0435\u043C\u043E\u0435 \u0438\u043C\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430, \u0432\u043D\u0443\u0442\u0440\u0438 \u043A\u043E\u0442\u043E\u0440\u043E\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u0440\u0430\u0431\u043E\u0442\u0430\u0442\u044C."),
-        taskRef: z2.string().min(1).describe("Id \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u043B\u0438 \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u043E\u0447\u0438\u0442\u0430\u0435\u043C\u043E\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F."),
-        instructions: z2.string().optional().describe("\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0438\u044F \u0438\u043B\u0438 \u043F\u043E\u0436\u0435\u043B\u0430\u043D\u0438\u044F \u043A \u043F\u043B\u0430\u043D\u0443.")
+        projectRef: z4.string().min(1).describe("Id \u0438\u043B\u0438 \u0447\u0438\u0442\u0430\u0435\u043C\u043E\u0435 \u0438\u043C\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430, \u0432\u043D\u0443\u0442\u0440\u0438 \u043A\u043E\u0442\u043E\u0440\u043E\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u0440\u0430\u0431\u043E\u0442\u0430\u0442\u044C."),
+        taskRef: z4.string().min(1).describe("Id \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u043B\u0438 \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u043E\u0447\u0438\u0442\u0430\u0435\u043C\u043E\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F."),
+        instructions: z4.string().optional().describe("\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0438\u044F \u0438\u043B\u0438 \u043F\u043E\u0436\u0435\u043B\u0430\u043D\u0438\u044F \u043A \u043F\u043B\u0430\u043D\u0443.")
       }
     },
     async ({ instructions, projectRef, taskRef }) => ({
@@ -3290,9 +3061,9 @@ function createMcpServer(appService, logger) {
     {
       description: "\u0421\u0436\u0430\u0442\u044C \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443 \u043F\u043E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F\u043C \u0438 \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u043A\u0430\u043C \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u044B\u0439 Markdown-\u043F\u043B\u0430\u043D \u0438 \u043E\u0447\u0438\u0441\u0442\u0438\u0442\u044C \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0435 discussion-\u0431\u043B\u043E\u043A\u0438.",
       argsSchema: {
-        projectRef: z2.string().min(1).describe("Id \u0438\u043B\u0438 \u0447\u0438\u0442\u0430\u0435\u043C\u043E\u0435 \u0438\u043C\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430, \u0432\u043D\u0443\u0442\u0440\u0438 \u043A\u043E\u0442\u043E\u0440\u043E\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u0440\u0430\u0431\u043E\u0442\u0430\u0442\u044C."),
-        taskRef: z2.string().min(1).describe("Id \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u043B\u0438 \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u043E\u0447\u0438\u0442\u0430\u0435\u043C\u043E\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F."),
-        instructions: z2.string().optional().describe("\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0438\u044F \u043A \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u043C\u0443 \u043F\u043B\u0430\u043D\u0443 \u043F\u043E\u0441\u043B\u0435 \u0441\u0436\u0430\u0442\u0438\u044F \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438.")
+        projectRef: z4.string().min(1).describe("Id \u0438\u043B\u0438 \u0447\u0438\u0442\u0430\u0435\u043C\u043E\u0435 \u0438\u043C\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430, \u0432\u043D\u0443\u0442\u0440\u0438 \u043A\u043E\u0442\u043E\u0440\u043E\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u0440\u0430\u0431\u043E\u0442\u0430\u0442\u044C."),
+        taskRef: z4.string().min(1).describe("Id \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u043B\u0438 \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u043E\u0447\u0438\u0442\u0430\u0435\u043C\u043E\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u0437 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F."),
+        instructions: z4.string().optional().describe("\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0438\u044F \u043A \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u043C\u0443 \u043F\u043B\u0430\u043D\u0443 \u043F\u043E\u0441\u043B\u0435 \u0441\u0436\u0430\u0442\u0438\u044F \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438.")
       }
     },
     async ({ instructions, projectRef, taskRef }) => ({
@@ -3312,9 +3083,9 @@ function createMcpServer(appService, logger) {
     {
       description: "\u041F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u0438\u0442\u044C \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C SKILL.md \u0434\u043B\u044F \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430, \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u043F\u0443\u0442\u044C \u043A \u043D\u0435\u043C\u0443 \u0432 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0438 \u0437\u0430\u0442\u0435\u043C \u043A\u0440\u0430\u0442\u043A\u043E \u043E\u0442\u0447\u0438\u0442\u0430\u0442\u044C\u0441\u044F.",
       argsSchema: {
-        projectRef: z2.string().min(1).describe("Id \u0438\u043B\u0438 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430, \u0434\u043B\u044F \u043A\u043E\u0442\u043E\u0440\u043E\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u0441\u043E\u0437\u0434\u0430\u0442\u044C skill."),
-        skillPath: z2.string().optional().describe("\u041D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B\u0439 \u043F\u0443\u0442\u044C \u043A SKILL.md. \u0415\u0441\u043B\u0438 \u043D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 skillFilePath \u0438\u0437 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0438\u043B\u0438 <rootPath>/SKILL.md."),
-        instructions: z2.string().optional().describe("\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u0442\u0440\u0435\u0431\u043E\u0432\u0430\u043D\u0438\u044F \u043A \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u043C\u0443 skill-\u0444\u0430\u0439\u043B\u0430.")
+        projectRef: z4.string().min(1).describe("Id \u0438\u043B\u0438 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430, \u0434\u043B\u044F \u043A\u043E\u0442\u043E\u0440\u043E\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u0441\u043E\u0437\u0434\u0430\u0442\u044C skill."),
+        skillPath: z4.string().optional().describe("\u041D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B\u0439 \u043F\u0443\u0442\u044C \u043A SKILL.md. \u0415\u0441\u043B\u0438 \u043D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 skillFilePath \u0438\u0437 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0438\u043B\u0438 <rootPath>/SKILL.md."),
+        instructions: z4.string().optional().describe("\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u0442\u0440\u0435\u0431\u043E\u0432\u0430\u043D\u0438\u044F \u043A \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u043C\u0443 skill-\u0444\u0430\u0439\u043B\u0430.")
       }
     },
     async ({ instructions, projectRef, skillPath }) => ({
@@ -3329,6 +3100,109 @@ function createMcpServer(appService, logger) {
       ]
     })
   );
+}
+
+// src/main/mcp/actions/resource-actions.ts
+import { z as z5 } from "zod";
+function registerResourceActions(server, context) {
+  server.registerTool(
+    "create_resource",
+    {
+      description: "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u043D\u043E\u0432\u044B\u0439 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0439 \u0440\u0435\u0441\u0443\u0440\u0441 (Markdown-\u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442) \u043D\u0435 \u043F\u0440\u0438\u0432\u044F\u0437\u0430\u043D\u043D\u044B\u0439 \u043A \u043F\u0440\u043E\u0435\u043A\u0442\u0443.",
+      inputSchema: {
+        name: z5.string().min(1).max(200),
+        contentMd: z5.string().optional()
+      }
+    },
+    async ({ name, contentMd }) => {
+      context.getLogger().info("mcp", "Tool create_resource called", { name });
+      const resource = await context.getAppService().createResource({ name, contentMd });
+      return {
+        content: textContent("\u0420\u0435\u0441\u0443\u0440\u0441 \u0441\u043E\u0437\u0434\u0430\u043D."),
+        structuredContent: serializeResource(resource)
+      };
+    }
+  );
+  server.registerTool(
+    "get_resource",
+    {
+      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0440\u0435\u0441\u0443\u0440\u0441 \u043F\u043E id.",
+      inputSchema: {
+        id: z5.string()
+      }
+    },
+    async ({ id }) => {
+      context.getLogger().debug("mcp", "Tool get_resource called", { id });
+      const resource = await context.getAppService().getResource(id);
+      const response = serializeResource(resource);
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
+      };
+    }
+  );
+  server.registerTool(
+    "list_resources",
+    {
+      description: "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0432\u0441\u0435\u0445 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0445 \u0440\u0435\u0441\u0443\u0440\u0441\u043E\u0432."
+    },
+    async () => {
+      context.getLogger().debug("mcp", "Tool list_resources called");
+      const resources = await context.getAppService().listResources();
+      const response = serializeResourceCollection(resources);
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
+      };
+    }
+  );
+  server.registerTool(
+    "update_resource",
+    {
+      description: "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0438\u043B\u0438 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u0440\u0435\u0441\u0443\u0440\u0441\u0430.",
+      inputSchema: {
+        id: z5.string(),
+        name: z5.string().min(1).max(200).optional(),
+        contentMd: z5.string().optional()
+      }
+    },
+    async ({ id, name, contentMd }) => {
+      context.getLogger().info("mcp", "Tool update_resource called", { id });
+      const resource = await context.getAppService().updateResource({ id, name, contentMd });
+      return {
+        content: textContent("\u0420\u0435\u0441\u0443\u0440\u0441 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D."),
+        structuredContent: serializeResource(resource)
+      };
+    }
+  );
+  server.registerTool(
+    "find_resources",
+    {
+      description: "\u041D\u0430\u0439\u0442\u0438 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0435 \u0440\u0435\u0441\u0443\u0440\u0441\u044B \u043F\u043E \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044E \u0438\u043B\u0438 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u043C\u0443.",
+      inputSchema: {
+        query: z5.string().min(1),
+        limit: z5.number().int().min(1).max(20).optional()
+      }
+    },
+    async ({ query, limit }) => {
+      context.getLogger().debug("mcp", "Tool find_resources called", { query });
+      const resources = await context.getAppService().listResources();
+      const normalizedQuery = query.trim().toLocaleLowerCase("ru-RU");
+      const matches = resources.filter(
+        (resource) => [resource.id, resource.name, resource.contentMd].join(" ").toLocaleLowerCase("ru-RU").includes(normalizedQuery)
+      ).slice(0, limit ?? 5);
+      const response = serializeResourceCollection(matches);
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
+      };
+    }
+  );
+}
+
+// src/main/mcp/actions/resource-template-actions.ts
+import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+function registerResourceTemplateActions(server, context) {
   server.registerResource(
     "task-resource",
     new ResourceTemplate("task://{id}", { list: void 0 }),
@@ -3336,8 +3210,8 @@ function createMcpServer(appService, logger) {
       description: "JSON \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u0437 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430"
     },
     async (uri, variables) => {
-      const ctx = await requireTaskContext(String(variables.id));
-      const task = await ctx.getTask();
+      const taskContext = await context.requireTaskContext(String(variables.id));
+      const task = await taskContext.getTask();
       return {
         contents: [
           {
@@ -3356,8 +3230,8 @@ function createMcpServer(appService, logger) {
       description: "Markdown-\u043F\u043B\u0430\u043D \u0437\u0430\u0434\u0430\u0447\u0438 \u0438\u0437 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430"
     },
     async (uri, variables) => {
-      const ctx = await requireTaskContext(String(variables.taskId));
-      const plan = await ctx.getPlan();
+      const taskContext = await context.requireTaskContext(String(variables.taskId));
+      const plan = await taskContext.getPlan();
       return {
         contents: [
           {
@@ -3369,6 +3243,203 @@ function createMcpServer(appService, logger) {
       };
     }
   );
+}
+
+// src/main/mcp/actions/session-actions.ts
+function registerSessionActions(server, context) {
+  server.registerTool(
+    "get_session_state",
+    {
+      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0435\u0435 \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 MCP-\u0441\u0435\u0441\u0441\u0438\u0438: \u043D\u0430\u0434 \u043A\u0430\u043A\u043E\u0439 \u0437\u0430\u0434\u0430\u0447\u0435\u0439 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0430\u0433\u0435\u043D\u0442, \u043D\u0430\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0441\u0432\u0435\u0436 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0438 \u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0448\u0430\u0433\u043E\u0432 \u0443\u0436\u0435 \u0441\u0434\u0435\u043B\u0430\u043D\u043E. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u043F\u0435\u0440\u0435\u0434 \u043D\u0430\u0447\u0430\u043B\u043E\u043C \u0440\u0430\u0431\u043E\u0442\u044B \u0441 \u0437\u0430\u0434\u0430\u0447\u0435\u0439, \u0447\u0442\u043E\u0431\u044B \u043F\u043E\u043D\u044F\u0442\u044C, \u043D\u0443\u0436\u043D\u043E \u043B\u0438 \u043F\u0435\u0440\u0435\u0447\u0438\u0442\u044B\u0432\u0430\u0442\u044C \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442."
+    },
+    async () => {
+      context.getLogger().debug("mcp", "Tool get_session_state called");
+      const response = serializeAgentSession(context.getAgentSession());
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
+      };
+    }
+  );
+}
+
+// src/main/mcp/actions/task-actions.ts
+import { z as z6 } from "zod";
+function registerTaskActions(server, context) {
+  server.registerTool(
+    "create_task",
+    {
+      description: "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u043D\u043E\u0432\u0443\u044E \u0437\u0430\u0434\u0430\u0447\u0443 \u0432 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u043C \u043F\u0440\u043E\u0435\u043A\u0442\u0435 \u0441 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u043E\u0439 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u043E\u0439.",
+      inputSchema: {
+        title: z6.string().min(3),
+        description: z6.string().min(12)
+      }
+    },
+    async ({ description, title }) => {
+      const project = await context.requirePreparedProject();
+      context.getLogger().info("mcp", "Tool create_task called", { projectId: project.id, title });
+      const detail = await context.getAppService().createTask({ title, description, projectId: project.id });
+      return {
+        content: textContent("\u0417\u0430\u0434\u0430\u0447\u0430 \u0441\u043E\u0437\u0434\u0430\u043D\u0430."),
+        structuredContent: serializeTaskDetail(detail)
+      };
+    }
+  );
+  server.registerTool(
+    "list_tasks",
+    {
+      description: "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u043E\u0439 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u043E\u0439."
+    },
+    async () => {
+      const project = await context.requirePreparedProject();
+      context.getLogger().debug("mcp", "Tool list_tasks called", { projectId: project.id });
+      const tasks = await context.getAppService().listTasks(project.id);
+      const response = serializeTaskCollection(tasks, project);
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
+      };
+    }
+  );
+  server.registerTool(
+    "find_tasks",
+    {
+      description: "\u041D\u0430\u0439\u0442\u0438 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u043E\u0439 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u043E\u0439 \u043F\u043E id, \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044E, \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u044E \u0438\u043B\u0438 \u0441\u0442\u0430\u0442\u0443\u0441\u0443.",
+      inputSchema: {
+        query: z6.string().min(1),
+        limit: z6.number().int().min(1).max(20).optional()
+      }
+    },
+    async ({ limit, query }) => {
+      const project = await context.requirePreparedProject();
+      context.getLogger().debug("mcp", "Tool find_tasks called", {
+        projectId: project.id,
+        query,
+        limit: limit ?? 5
+      });
+      const tasks = await context.getAppService().listTasks(project.id);
+      const matches = findTasksByQuery(tasks, query, limit ?? 5);
+      const response = serializeTaskCollection(matches, project);
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
+      };
+    }
+  );
+  server.registerTool(
+    "get_task",
+    {
+      description: "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u0443\u044E \u0438\u043D\u0444\u043E\u0440\u043C\u0430\u0446\u0438\u044E \u043E \u0437\u0430\u0434\u0430\u0447\u0435 \u043F\u043E taskId: task, plan (\u0432\u043A\u043B\u044E\u0447\u0430\u044F contentMd \u0438 \u0432\u0441\u0435 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0438), linkedResources, linkedTasks.",
+      inputSchema: {
+        taskId: z6.string()
+      }
+    },
+    async ({ taskId }) => {
+      context.getLogger().debug("mcp", "Tool get_task called", { taskId });
+      const taskContext = createTaskContext(taskId, context.getAppService());
+      const snapshot = await taskContext.getSnapshot();
+      const response = serializeTaskSnapshot(snapshot);
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
+      };
+    }
+  );
+  server.registerTool(
+    "sync_task",
+    {
+      description: "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443 \u0441 \u0441\u0435\u0441\u0441\u0438\u0435\u0439. \u041F\u0435\u0440\u0432\u044B\u0439 \u0432\u044B\u0437\u043E\u0432 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u043F\u043E\u043B\u043D\u044B\u0439 \u0441\u043D\u0430\u043F\u0448\u043E\u0442 \u0438 \u043F\u0435\u0440\u0435\u0432\u043E\u0434\u0438\u0442 \u0441\u0435\u0441\u0441\u0438\u044E \u0432 work-\u0440\u0435\u0436\u0438\u043C. \u041F\u043E\u0432\u0442\u043E\u0440\u043D\u044B\u0435 \u0432\u044B\u0437\u043E\u0432\u044B \u0432 \u0440\u0430\u043C\u043A\u0430\u0445 \u0442\u043E\u0439 \u0436\u0435 \u0441\u0435\u0441\u0441\u0438\u0438 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u044E\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0441 \u043C\u043E\u043C\u0435\u043D\u0442\u0430 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u0432\u044B\u0437\u043E\u0432\u0430 (delta-\u0440\u0435\u0436\u0438\u043C). \u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+      inputSchema: {
+        taskId: z6.string()
+      }
+    },
+    async ({ taskId }) => {
+      const session = context.getAgentSession();
+      context.getLogger().debug("mcp", "Tool sync_task called", {
+        taskId,
+        mode: session.lastMode,
+        sessionTaskId: session.taskId
+      });
+      const taskContext = await context.requireTaskContext(taskId);
+      const isDelta = session.lastMode !== null && session.taskId === taskId && session.lastContextVersion !== null;
+      if (isDelta) {
+        const since = session.lastContextVersion;
+        if (since === null) {
+          throw new Error("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u044B\u0447\u0438\u0441\u043B\u0438\u0442\u044C \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0434\u043B\u044F delta-\u0440\u0435\u0436\u0438\u043C\u0430.");
+        }
+        const snapshot2 = await taskContext.getSnapshot();
+        context.updateAgentSession(toDeltaMode(session));
+        const response2 = serializeDeltaSnapshot(snapshot2, since);
+        return {
+          content: textContent(JSON.stringify(response2, null, 2)),
+          structuredContent: response2
+        };
+      }
+      const snapshot = await taskContext.getSnapshot();
+      context.updateAgentSession(startWork(session, taskId));
+      const response = serializeTaskSnapshot(snapshot);
+      return {
+        content: textContent(JSON.stringify(response, null, 2)),
+        structuredContent: response
+      };
+    }
+  );
+  server.registerTool(
+    "update_task_status",
+    {
+      description: "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430. \u0414\u043E\u043F\u0443\u0441\u0442\u0438\u043C\u044B\u0435 \u0441\u0442\u0430\u0442\u0443\u0441\u044B: new, planning, requires_clarification, implementation, testing, completed.",
+      inputSchema: {
+        taskId: z6.string(),
+        status: z6.enum(["new", "planning", "requires_clarification", "implementation", "testing", "completed"])
+      }
+    },
+    async ({ status, taskId }) => {
+      const taskContext = await context.requireTaskContext(taskId);
+      context.touchSession({ taskId });
+      context.getLogger().info("mcp", "Tool update_task_status called", { taskId, status });
+      await taskContext.updateStatus(status);
+      const snapshot = await taskContext.getSnapshot();
+      return {
+        content: textContent("\u0421\u0442\u0430\u0442\u0443\u0441 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D."),
+        structuredContent: serializeTaskSnapshot(snapshot)
+      };
+    }
+  );
+}
+
+// src/main/mcp/controller/mcp-server-controller.ts
+var McpServerController = class {
+  constructor(server, appService, logger) {
+    this.server = server;
+    this.context = new McpControllerContext(appService, logger);
+  }
+  context;
+  register() {
+    registerProjectActions(this.server, this.context);
+    registerTaskActions(this.server, this.context);
+    registerPlanActions(this.server, this.context);
+    registerResourceActions(this.server, this.context);
+    registerSessionActions(this.server, this.context);
+    registerPromptActions(this.server);
+    registerResourceTemplateActions(this.server, this.context);
+  }
+};
+
+// src/main/mcp/create-mcp-server.ts
+function createMcpServer(appService, logger) {
+  const server = new McpServer(
+    {
+      name: "aitasker-mcp",
+      version: "1.0.0"
+    },
+    {
+      capabilities: {
+        logging: {}
+      }
+    }
+  );
+  const controller = new McpServerController(server, appService, logger);
+  controller.register();
   return server;
 }
 

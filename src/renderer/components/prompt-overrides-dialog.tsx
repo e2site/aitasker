@@ -25,6 +25,7 @@ const PROMPT_LABELS: Record<PromptId, string> = {
   "activate-project": "Активация проекта",
   "agent-task-prompt": "Создать задачу в агенте",
   "plan-task": "Планирование задачи",
+  "reload-context": "Перезагрузка контекста",
   "clarify-plan": "Уточнение плана",
   "implementation": "Переход к реализации",
   "finish-task": "Завершение задачи",

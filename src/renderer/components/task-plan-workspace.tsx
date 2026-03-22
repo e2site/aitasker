@@ -385,11 +385,11 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
                               <span
                                 className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE_CLASSES[kind]}`}
                               >
-                                {kind === "discussion" ? "обсуждение" : KIND_LABEL[kind as CommentKind]}
+                                {KIND_LABEL[kind]}
                               </span>
                             </div>
                             <div className="flex items-center gap-2">
-                              {kind !== "discussion" ? (
+                              {kind === "extension" || kind === "improvement" ? (
                                 <Button
                                   type="button"
                                   variant="outline"
@@ -398,7 +398,7 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
                                   title="Скопировать prompt для AI агента"
                                   onClick={async () => {
                                     const copied = await copyText(
-                                      buildPlanCommentPrompt(props.detail, kind as CommentKind, comment.id)
+                                      buildPlanCommentPrompt(props.detail, kind, comment.id)
                                     );
                                     if (copied) {
                                       setCopiedCommentPromptId(comment.id);

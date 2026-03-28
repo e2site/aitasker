@@ -4,8 +4,8 @@ Out of scope: Route definitions, page composition, and Electron window managemen
 */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "@/renderer/app/App";
 import { AppProviders } from "@/renderer/app/providers";
+import ShadcnLayout from "@/renderer/layouts/shadcn-layout";
 import "@/renderer/app/styles.css";
 
 const container = document.getElementById("root");
@@ -17,7 +17,7 @@ if (!container) {
 createRoot(container).render(
   <StrictMode>
     <AppProviders>
-      <App />
+      <ShadcnLayout />
     </AppProviders>
   </StrictMode>
 );

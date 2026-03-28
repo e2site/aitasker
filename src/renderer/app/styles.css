@@ -6,6 +6,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@source "../../components/**/*.{tsx,ts}";
+@source "../../hooks/**/*.ts";
 /*
 ---break---
 */
@@ -55,14 +57,17 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(87, 124, 255, 0.12), transparent 32%),
-    linear-gradient(180deg, #f7f5f1 0%, #efebe4 100%);
-  color: var(--foreground);
 }
 
 #root {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Fix sidebar min-h-svh in Electron */
+[data-slot="sidebar-wrapper"] {
+  min-height: 100% !important;
 }
 
 button,
@@ -72,60 +77,181 @@ textarea {
 }
 
 .app-surface {
-  @apply min-h-screen px-5 py-6 text-slate-900 md:px-6 md:py-8;
+  @apply flex min-h-0 flex-1 flex-col px-5 py-6 md:px-6 md:py-8;
 }
 
 .app-grid {
-  @apply mx-auto grid w-full gap-6;
+  @apply mx-auto grid h-full w-full gap-6;
 }
 
 .app-card {
-  @apply rounded-3xl border border-slate-200/80 bg-white/85 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur md:p-6;
+  @apply rounded-3xl border bg-card p-5 shadow-sm md:p-6;
 }
 
 .app-label {
-  @apply text-xs font-semibold uppercase tracking-[0.24em] text-slate-500;
+  @apply text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground;
 }
 
 .app-heading {
-  @apply text-4xl font-semibold tracking-tight text-slate-900;
+  @apply text-4xl font-semibold tracking-tight;
 }
 
 .app-subheading {
-  @apply text-sm leading-6 text-slate-600;
+  @apply text-sm leading-6 text-muted-foreground;
 }
 
 .app-field {
-  @apply mt-2 min-h-36 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300;
+  @apply mt-2 min-h-36 w-full rounded-xl border bg-muted/50 px-4 py-3 text-sm leading-6 outline-none transition focus:border-ring focus:bg-background focus:ring-2 focus:ring-ring/30;
 }
 
 .app-input {
-  @apply w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-300;
+  @apply w-full rounded-xl border bg-background px-4 py-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30;
 }
 
 .app-editor {
-  @apply min-h-[420px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 font-mono text-sm leading-7 text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-300;
+  @apply min-h-[420px] w-full rounded-xl border bg-background px-4 py-4 font-mono text-sm leading-7 outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30;
 }
 
 .app-error {
-  @apply mt-2 text-sm text-rose-600;
+  @apply mt-2 text-sm text-destructive;
 }
 
+/* Task tracker UI */
+
+.task-card {
+  @apply relative w-full cursor-pointer rounded-xl border bg-card px-4 py-3 text-left transition hover:bg-muted/50;
+  border-left: 3px solid transparent;
+}
+
+.task-card--active {
+  @apply bg-muted/50;
+  border-left-color: var(--color-primary);
+}
+
+.task-status-dot {
+  @apply inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full;
+  background-color: var(--status-color, currentColor);
+}
+
+.task-group-header {
+  @apply mb-1.5 mt-4 px-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground;
+}
+
+.task-group-header:first-child {
+  @apply mt-0;
+}
+
+.task-meta-row {
+  @apply flex flex-wrap items-center gap-3 text-xs text-muted-foreground;
+}
+
+/* Project */
+
+.project-switcher {
+  @apply grid gap-2 sm:grid-cols-2;
+}
+
+.project-chip {
+  @apply flex min-h-24 flex-col justify-between rounded-2xl border bg-card px-4 py-3 text-left transition hover:bg-muted/50;
+}
+
+.project-chip--active {
+  @apply border-primary/20 bg-primary/5;
+}
+
+.project-chip__title {
+  @apply text-sm font-semibold;
+}
+
+.project-chip__meta {
+  @apply text-xs uppercase tracking-[0.18em] text-muted-foreground;
+}
+
+/* MCP */
+
+.mcp-hero-card {
+  @apply rounded-3xl border bg-card p-5 shadow-sm;
+}
+
+.mcp-flow-grid {
+  @apply grid gap-3 lg:grid-cols-2;
+}
+
+.mcp-flow-card {
+  @apply rounded-2xl border bg-card p-4 shadow-sm;
+}
+
+.mcp-flow-card__index {
+  @apply inline-flex size-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground;
+}
+
+.mcp-flow-card__title {
+  @apply mt-3 text-sm font-semibold;
+}
+
+.mcp-flow-card__text {
+  @apply mt-1 text-sm leading-6 text-muted-foreground;
+}
+
+.mcp-prompt-card {
+  @apply rounded-2xl border bg-card p-4 shadow-sm;
+}
+
+.mcp-prompt-block {
+  @apply mt-3 rounded-2xl border bg-muted px-4 py-3 font-mono text-xs leading-6 text-foreground whitespace-pre-wrap;
+}
+
+.mcp-copy-button {
+  @apply min-w-32;
+}
+
+/* Plan */
+
+.plan-workspace {
+  @apply space-y-4;
+}
+
+.plan-thread-message {
+  @apply rounded-2xl border px-4 py-3 shadow-sm;
+}
+
+.plan-thread-message--human {
+  @apply border-border bg-muted/30;
+}
+
+.plan-thread-message--agent {
+  @apply border-border bg-card;
+}
+
+.plan-thread-message__meta {
+  @apply mb-3 flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.18em] text-muted-foreground;
+}
+
+.plan-thread-message__author {
+  @apply font-semibold text-foreground;
+}
+
+.plan-thread-message__body .app-markdown {
+  @apply border-0 bg-transparent p-0 shadow-none;
+}
+
+/* Markdown */
+
 .app-markdown {
-  @apply max-w-none rounded-2xl border border-slate-200 bg-white p-5 text-sm leading-7 text-slate-800;
+  @apply max-w-none rounded-2xl border border-border bg-card p-5 text-sm leading-7 text-card-foreground;
 }
 
 .app-markdown h1 {
-  @apply mt-0 text-3xl font-semibold tracking-tight text-slate-950;
+  @apply mt-0 text-3xl font-semibold tracking-tight;
 }
 
 .app-markdown h2 {
-  @apply mt-8 text-xl font-semibold text-slate-950;
+  @apply mt-8 text-xl font-semibold;
 }
 
 .app-markdown p,
 .app-markdown li {
-  @apply text-sm leading-7 text-slate-700;
+  @apply text-sm leading-7 text-muted-foreground;
 }
 
 .app-markdown ul,
@@ -134,15 +260,15 @@ textarea {
 }
 
 .app-markdown pre {
-  @apply overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-800;
+  @apply overflow-x-auto rounded-xl border border-border bg-muted p-4;
 }
 
 .app-markdown code {
-  @apply rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-900;
+  @apply rounded bg-muted px-1.5 py-0.5 text-xs;
 }
 
 .app-markdown-table-wrap {
-  @apply my-5 overflow-x-auto rounded-2xl border border-slate-200 bg-white;
+  @apply my-5 overflow-x-auto rounded-2xl border border-border bg-card;
 }
 
 .app-markdown table {
@@ -150,27 +276,29 @@ textarea {
 }
 
 .app-markdown thead {
-  @apply bg-slate-50;
+  @apply bg-muted;
 }
 
 .app-markdown th {
-  @apply border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500;
+  @apply border-b border-border px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground;
 }
 
 .app-markdown td {
-  @apply border-b border-slate-100 px-4 py-3 align-top text-sm leading-6 text-slate-700;
+  @apply border-b border-border px-4 py-3 align-top text-sm leading-6;
 }
 
 .app-markdown tbody tr:last-child td {
   @apply border-b-0;
 }
 
+/* Code block */
+
 .app-code-block {
-  @apply my-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-50;
+  @apply my-5 overflow-hidden rounded-xl border border-border bg-muted;
 }
 
 .app-code-block pre {
-  @apply m-0 overflow-x-auto rounded-none border-0 bg-transparent p-4 text-slate-800 shadow-none outline-none;
+  @apply m-0 overflow-x-auto rounded-none border-0 bg-transparent p-4 shadow-none outline-none;
 }
 
 .app-code-block pre:focus,
@@ -199,24 +327,24 @@ textarea {
 }
 
 .milkdown-wrapper .milkdown .ProseMirror p {
-  @apply m-0 text-sm leading-6 text-slate-900;
+  @apply m-0 text-sm leading-6;
 }
 
 .milkdown-wrapper .milkdown .ProseMirror h1 {
-  @apply mt-0 text-2xl font-semibold tracking-tight text-slate-900;
+  @apply mt-0 text-2xl font-semibold tracking-tight;
 }
 
 .milkdown-wrapper .milkdown .ProseMirror h2 {
-  @apply mt-4 text-lg font-semibold text-slate-900;
+  @apply mt-4 text-lg font-semibold;
 }
 
 .milkdown-wrapper .milkdown .ProseMirror h3 {
-  @apply mt-3 text-base font-semibold text-slate-900;
+  @apply mt-3 text-base font-semibold;
 }
 
 .milkdown-wrapper .milkdown .ProseMirror ul,
 .milkdown-wrapper .milkdown .ProseMirror ol {
-  @apply pl-5 text-sm leading-6 text-slate-800;
+  @apply pl-5 text-sm leading-6;
 }
 
 .milkdown-wrapper .milkdown .ProseMirror li {
@@ -224,24 +352,24 @@ textarea {
 }
 
 .milkdown-wrapper .milkdown .ProseMirror code {
-  @apply rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-900;
+  @apply rounded bg-muted px-1.5 py-0.5 text-xs;
 }
 
 .milkdown-wrapper .milkdown .ProseMirror pre {
-  @apply overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-800;
+  @apply overflow-x-auto rounded-xl border border-border bg-muted p-4;
 }
 
 .milkdown-wrapper .milkdown .ProseMirror blockquote {
-  @apply border-l-4 border-slate-300 pl-4 text-sm italic text-slate-600;
+  @apply border-l-4 border-border pl-4 text-sm italic text-muted-foreground;
 }
 
 .milkdown-wrapper .milkdown .ProseMirror hr {
-  @apply my-4 border-slate-200;
+  @apply my-4 border-border;
 }
 
 .milkdown-wrapper .milkdown .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
-  @apply pointer-events-none float-left h-0 text-slate-400;
+  @apply pointer-events-none float-left h-0 text-muted-foreground;
 }
 
 .selection-popover {
@@ -250,144 +378,15 @@ textarea {
 }
 
 .selection-popover__btn {
-  @apply inline-flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white shadow-lg transition hover:bg-slate-700;
+  @apply inline-flex items-center gap-1.5 rounded-xl border border-border bg-popover px-3 py-1.5 text-xs font-medium text-popover-foreground shadow-lg transition hover:bg-muted;
 }
 
 .milkdown-toolbar {
-  @apply flex flex-wrap gap-1 border-b border-slate-200 pb-2 mb-2;
+  @apply flex flex-wrap gap-1 border-b border-border pb-2 mb-2;
 }
 
 .milkdown-toolbar__btn {
-  @apply rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-white hover:text-slate-900 disabled:opacity-40;
-}
-
-/* Task tracker UI */
-
-.task-card {
-  @apply relative w-full cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50;
-  border-left: 3px solid transparent;
-}
-
-.task-card--active {
-  @apply border-slate-200 bg-slate-50;
-  border-left-color: var(--primary);
-}
-
-.task-card--new {
-  --status-color: theme(colors.slate.400);
-}
-
-.task-card--planning {
-  --status-color: theme(colors.sky.400);
-}
-
-.task-card--requires_clarification {
-  --status-color: theme(colors.rose.400);
-}
-
-.task-card--implementation {
-  --status-color: theme(colors.amber.400);
-}
-
-.task-card--completed {
-  --status-color: theme(colors.emerald.400);
-}
-
-.task-status-dot {
-  @apply inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full;
-  background-color: var(--status-color, theme(colors.slate.300));
-}
-
-.task-group-header {
-  @apply mb-1.5 mt-4 px-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400;
-}
-
-.task-group-header:first-child {
-  @apply mt-0;
-}
-
-.project-switcher {
-  @apply grid gap-2 sm:grid-cols-2;
-}
-
-.project-chip {
-  @apply flex min-h-24 flex-col justify-between rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(244,247,255,0.94))] px-4 py-3 text-left transition hover:border-slate-300 hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)];
-}
-
-.project-chip--active {
-  @apply border-slate-900/15 bg-[linear-gradient(180deg,rgba(224,236,255,0.95),rgba(245,248,255,0.98))] shadow-[0_16px_36px_rgba(59,130,246,0.15)];
-}
-
-.project-chip__title {
-  @apply text-sm font-semibold text-slate-900;
-}
-
-.project-chip__meta {
-  @apply text-xs uppercase tracking-[0.18em] text-slate-500;
-}
-
-.mcp-hero-card {
-  @apply rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,rgba(241,245,249,0.9),rgba(255,255,255,0.96))] p-5 shadow-sm;
-}
-
-.mcp-flow-grid {
-  @apply grid gap-3 lg:grid-cols-2;
-}
-
-.mcp-flow-card {
-  @apply rounded-2xl border border-slate-200 bg-white p-4 shadow-sm;
-}
-
-.mcp-flow-card__index {
-  @apply inline-flex size-8 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white;
-}
-
-.mcp-flow-card__title {
-  @apply mt-3 text-sm font-semibold text-slate-900;
-}
-
-.mcp-flow-card__text {
-  @apply mt-1 text-sm leading-6 text-slate-600;
-}
-
-.mcp-prompt-card {
-  @apply rounded-2xl border border-slate-200 bg-white p-4 shadow-sm;
-}
-
-.mcp-prompt-block {
-  @apply mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs leading-6 text-slate-700 whitespace-pre-wrap;
-}
-
-.mcp-copy-button {
-  @apply min-w-32;
-}
-
-.plan-workspace {
-  @apply space-y-4;
-}
-
-.plan-thread-message {
-  @apply rounded-2xl border px-4 py-3 shadow-sm;
-}
-
-.plan-thread-message--human {
-  @apply border-sky-200 bg-[linear-gradient(180deg,rgba(239,246,255,0.96),rgba(255,255,255,0.98))];
-}
-
-.plan-thread-message--agent {
-  @apply border-emerald-200 bg-[linear-gradient(180deg,rgba(236,253,245,0.96),rgba(255,255,255,0.98))];
-}
-
-.plan-thread-message__meta {
-  @apply mb-3 flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.18em] text-slate-500;
-}
-
-.plan-thread-message__author {
-  @apply font-semibold text-slate-700;
-}
-
-.plan-thread-message__body .app-markdown {
-  @apply border-0 bg-transparent p-0 shadow-none;
+  @apply rounded-lg border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground transition hover:bg-background hover:text-foreground disabled:opacity-40;
 }
 
 /* Search highlight */
@@ -402,10 +401,6 @@ mark.search-highlight {
 mark.search-highlight.active {
   background: #f97316;
   color: white;
-}
-
-.task-meta-row {
-  @apply flex flex-wrap items-center gap-3 text-xs text-slate-400;
 }
 
 .dark {

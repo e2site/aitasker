@@ -1,19 +1,36 @@
 /*
-Назначение: Рендерит таблицу задач в стиле Jira — строка = задача, с колонками статус/название/проект/дата/ID.
-Поддерживает сортировку по кликабельным заголовкам с сохранением настроек в localStorage.
-Не входит: Фильтрация, загрузка данных и панель деталей задачи.
+Назначение: Рендерит топ-бар (поиск, фильтры статусов) и таблицу задач.
+Не входит: Загрузка данных, панель деталей задачи, управление проектами.
 */
+import * as React from "react";
 import { useAtom } from "jotai";
-import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
-import type { TaskRecord } from "@/shared/contracts/desktop-api";
+import { ChevronDown, ChevronUp, ChevronsUpDown, Search, X } from "lucide-react";
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+} from "@tanstack/react-table";
+import type { TaskRecord, TaskStatus } from "@/shared/contracts/desktop-api";
 import { TaskStatusBadge } from "@/renderer/components/task-status-badge";
-import { cn } from "@/renderer/components/ui/class-names";
+import { Button } from "@/renderer/components/ui/button";
+import { Input } from "@/renderer/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/renderer/components/ui/table";
+import { TASK_STATUS_LIST, getTaskStatusMeta } from "@/renderer/features/tasks/task-status-meta";
 import {
   taskSortAtom,
   STATUS_ORDER,
   type SortField,
-  type TaskSortState
+  type TaskSortState,
 } from "@/renderer/features/tasks/task-sort-state";
+import { cn } from "@/renderer/components/ui/class-names";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
@@ -33,46 +50,40 @@ function sortTasks(tasks: TaskRecord[], sort: TaskSortState): TaskRecord[] {
   });
 }
 
-interface SortableHeaderProps {
-  field: SortField;
-  label: string;
-  sort: TaskSortState;
-  onSort(field: SortField): void;
-  className?: string;
-}
-
-function SortableHeader({ field, label, sort, onSort, className }: SortableHeaderProps) {
-  const isActive = sort.field === field;
-  return (
-    <th
-      onClick={() => onSort(field)}
-      className={cn(
-        "cursor-pointer select-none px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 hover:text-slate-600 transition-colors",
-        className
-      )}
-    >
-      <span className="flex items-center gap-1">
-        {label}
-        {isActive ? (
-          sort.direction === "asc"
-            ? <ChevronUp className="size-3 text-slate-500" />
-            : <ChevronDown className="size-3 text-slate-500" />
-        ) : (
-          <ChevronsUpDown className="size-3 opacity-40" />
-        )}
-      </span>
-    </th>
-  );
-}
+const SORT_FIELDS: SortField[] = ["status", "title", "projectName", "createdAt", "updatedAt"];
+const HEADERS: Record<SortField, string> = {
+  status: "Статус",
+  title: "Задача",
+  projectName: "Проект",
+  createdAt: "Создано",
+  updatedAt: "Обновлено",
+};
 
 export interface TaskTableProps {
-  onSelect(taskId: string): void;
+  tasks: TaskRecord[];
+  filteredCount: number;
+  totalCount: number;
   selectedTaskId: string | null;
   showProject: boolean;
-  tasks: TaskRecord[];
+  onSelect(taskId: string): void;
+  searchQuery: string;
+  selectedStatuses: TaskStatus[];
+  onSearchChange(query: string): void;
+  onStatusFilterChange(statuses: TaskStatus[]): void;
 }
 
-export function TaskTable({ tasks, selectedTaskId, showProject, onSelect }: TaskTableProps) {
+export function TaskTable({
+  tasks,
+  filteredCount,
+  totalCount,
+  selectedTaskId,
+  showProject,
+  onSelect,
+  searchQuery,
+  selectedStatuses,
+  onSearchChange,
+  onStatusFilterChange,
+}: TaskTableProps) {
   const [sort, setSort] = useAtom(taskSortAtom);
 
   const handleSort = (field: SortField) => {
@@ -83,94 +94,191 @@ export function TaskTable({ tasks, selectedTaskId, showProject, onSelect }: Task
     );
   };
 
-  const sortedTasks = sortTasks(tasks, sort);
+  const toggleStatus = (status: TaskStatus) => {
+    const next = selectedStatuses.includes(status)
+      ? selectedStatuses.filter((s) => s !== status)
+      : [...selectedStatuses, status];
+    onStatusFilterChange(next);
+  };
 
-  if (tasks.length === 0) {
-    return (
-      <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 py-16 text-sm text-slate-500">
-        Нет задач, соответствующих фильтрам.
-      </div>
+  const sortedTasks = React.useMemo(() => sortTasks(tasks, sort), [tasks, sort]);
+
+  const columns = React.useMemo<ColumnDef<TaskRecord>[]>(() => {
+    const cols: ColumnDef<TaskRecord>[] = [
+      {
+        id: "status",
+        cell: ({ row }) => <TaskStatusBadge status={row.original.status} />,
+      },
+      {
+        id: "title",
+        cell: ({ row }) => (
+          <div className="max-w-xs lg:max-w-sm">
+            <p className="truncate font-medium">{row.original.title}</p>
+            {row.original.description ? (
+              <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{row.original.description}</p>
+            ) : null}
+          </div>
+        ),
+      },
+    ];
+
+    if (showProject) {
+      cols.push({
+        id: "projectName",
+        cell: ({ row }) => (
+          <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+            {row.original.projectName}
+          </span>
+        ),
+      });
+    }
+
+    cols.push(
+      {
+        id: "createdAt",
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-xs text-muted-foreground">
+            {formatDate(row.original.createdAt)}
+          </span>
+        ),
+      },
+      {
+        id: "updatedAt",
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-xs text-muted-foreground">
+            {formatDate(row.original.updatedAt)}
+          </span>
+        ),
+      },
+      {
+        id: "shortId",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs text-muted-foreground">
+            {row.original.id.slice(0, 8).toUpperCase()}
+          </span>
+        ),
+      }
     );
-  }
+
+    return cols;
+  }, [showProject]);
+
+  const table = useReactTable({
+    data: sortedTasks,
+    columns,
+    getRowId: (row) => row.id,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
+  const visibleFields = React.useMemo<SortField[]>(
+    () => SORT_FIELDS.filter((f) => f !== "projectName" || showProject),
+    [showProject]
+  );
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-slate-100 bg-slate-50/80">
-            <SortableHeader field="status" label="Статус" sort={sort} onSort={handleSort} />
-            <SortableHeader field="title" label="Задача" sort={sort} onSort={handleSort} />
-            {showProject && (
-              <SortableHeader field="projectName" label="Проект" sort={sort} onSort={handleSort} />
-            )}
-            <SortableHeader field="createdAt" label="Создано" sort={sort} onSort={handleSort} />
-            <SortableHeader field="updatedAt" label="Обновлено" sort={sort} onSort={handleSort} />
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-              ID
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {sortedTasks.map((task, index) => {
-            const isActive = task.id === selectedTaskId;
+    <div className="flex flex-col gap-3">
+      {/* Search + status filters + counter */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-48 flex-1 max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Input
+            type="search"
+            placeholder="Поиск задач..."
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-1">
+          {TASK_STATUS_LIST.map(({ value, filterLabel }) => {
+            const active = selectedStatuses.includes(value);
+            const meta = getTaskStatusMeta(value);
             return (
-              <tr
-                key={task.id}
-                onClick={() => onSelect(task.id)}
+              <button
+                key={value}
+                type="button"
+                onClick={() => toggleStatus(value)}
                 className={cn(
-                  "cursor-pointer border-b border-slate-100 transition last:border-0",
-                  isActive
-                    ? "bg-slate-100 ring-1 ring-inset ring-slate-300"
-                    : index % 2 === 0
-                      ? "hover:bg-slate-50"
-                      : "bg-slate-50/40 hover:bg-slate-50"
+                  "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                  active
+                    ? cn(meta.badgeClass, "border-transparent")
+                    : "border-border bg-background text-muted-foreground hover:bg-muted"
                 )}
               >
-                {/* Status */}
-                <td className="px-4 py-3">
-                  <TaskStatusBadge status={task.status} />
-                </td>
-
-                {/* Title + description */}
-                <td className="max-w-xs px-4 py-3 lg:max-w-sm">
-                  <p className={cn("truncate font-medium", isActive ? "text-slate-900" : "text-slate-800")}>
-                    {task.title}
-                  </p>
-                  {task.description ? (
-                    <p className="mt-0.5 line-clamp-1 text-xs text-slate-400">{task.description}</p>
-                  ) : null}
-                </td>
-
-                {/* Project */}
-                {showProject && (
-                  <td className="px-4 py-3">
-                    <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                      {task.projectName}
-                    </span>
-                  </td>
-                )}
-
-                {/* Created at */}
-                <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
-                  {formatDate(task.createdAt)}
-                </td>
-
-                {/* Updated at */}
-                <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
-                  {formatDate(task.updatedAt)}
-                </td>
-
-                {/* Short ID */}
-                <td className="px-4 py-3">
-                  <span className="font-mono text-xs text-slate-400">
-                    {task.id.slice(0, 8).toUpperCase()}
-                  </span>
-                </td>
-              </tr>
+                {filterLabel}
+              </button>
             );
           })}
-        </tbody>
-      </table>
+        </div>
+
+        {selectedStatuses.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={() => onStatusFilterChange([])}>
+            <X className="size-3.5" />
+            Сбросить
+          </Button>
+        )}
+
+        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+          {filteredCount === totalCount
+            ? `${totalCount} задач`
+            : `${filteredCount} из ${totalCount}`}
+        </span>
+      </div>
+
+      {/* Table */}
+      {tasks.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed py-16 text-sm text-muted-foreground">
+          Нет задач, соответствующих фильтрам.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                {visibleFields.map((field) => (
+                  <TableHead
+                    key={field}
+                    onClick={() => handleSort(field)}
+                    className="cursor-pointer select-none hover:text-foreground"
+                  >
+                    <span className="flex items-center gap-1">
+                      {HEADERS[field]}
+                      {sort.field === field ? (
+                        sort.direction === "asc"
+                          ? <ChevronUp className="size-3" />
+                          : <ChevronDown className="size-3" />
+                      ) : (
+                        <ChevronsUpDown className="size-3 opacity-40" />
+                      )}
+                    </span>
+                  </TableHead>
+                ))}
+                <TableHead>ID</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.map((row) => {
+                const isActive = row.original.id === selectedTaskId;
+                return (
+                  <TableRow
+                    key={row.id}
+                    onClick={() => onSelect(row.original.id)}
+                    data-state={isActive ? "selected" : undefined}
+                    className="cursor-pointer"
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </div>
   );
 }

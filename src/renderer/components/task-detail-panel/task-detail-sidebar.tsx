@@ -3,12 +3,13 @@
 Не входит: Основное содержимое вкладок, редактор плана и поиск по плану.
 */
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, BookOpen, Link, X } from "lucide-react";
 import { LinkResourceDialog } from "@/renderer/components/link-resource-dialog";
 import { LinkTaskDialog } from "@/renderer/components/link-task-dialog";
 import { McpPromptShortcuts } from "@/renderer/components/mcp-prompt-shortcuts";
 import type { TaskDetail, TaskStatus } from "@/shared/contracts/desktop-api";
+import { TaskDetailLinkedResourcesSection } from "./task-detail-linked-resources-section";
 import { formatRuDate, formatRuDateTime } from "./task-detail-panel-helpers";
+import { TaskDetailLinkedTasksSection } from "./task-detail-linked-tasks-section";
 import { TaskDetailMetaField } from "./task-detail-meta-field";
 import { TaskStatusDropdown } from "./task-status-dropdown";
 
@@ -69,93 +70,19 @@ export function TaskDetailSidebar({
         />
         <TaskDetailMetaField label="SKILL.md" value={detail.project.skillFilePath} />
 
-        <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Связанные задачи</span>
+        <TaskDetailLinkedTasksSection
+          linkedTasks={detail.linkedTasks}
+          isUnlinkingTask={isUnlinkingTask}
+          onUnlinkTask={onUnlinkTask}
+          onOpenLinkDialog={() => setLinkDialogOpen(true)}
+        />
 
-          {detail.linkedTasks.length === 0 ? (
-            <p className="text-xs text-slate-400">Нет привязанных задач</p>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {detail.linkedTasks.map((linked) => (
-                <div
-                  key={linked.id}
-                  className="group flex items-start gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
-                >
-                  <span className="mt-0.5 shrink-0 text-slate-400">
-                    {linked.direction === "outgoing" ? (
-                      <ArrowRight className="size-3" />
-                    ) : (
-                      <ArrowLeft className="size-3" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 text-xs font-medium text-slate-700">{linked.title}</p>
-                    {linked.comment && <p className="mt-0.5 line-clamp-2 text-xs text-slate-400">{linked.comment}</p>}
-                  </div>
-                  <button
-                    type="button"
-                    title="Отвязать задачу"
-                    disabled={isUnlinkingTask}
-                    onClick={() => onUnlinkTask(linked.id)}
-                    className="shrink-0 rounded p-0.5 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100 disabled:pointer-events-none"
-                  >
-                    <X className="size-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setLinkDialogOpen(true)}
-            className="flex items-center gap-1.5 self-start rounded-lg px-2 py-1 text-xs text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-          >
-            <Link className="size-3" />
-            Привязать задачу
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Ресурсы</span>
-
-          {detail.linkedResources.length === 0 ? (
-            <p className="text-xs text-slate-400">Нет привязанных ресурсов</p>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {detail.linkedResources.map((linked) => (
-                <div
-                  key={linked.id}
-                  className="group flex items-start gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
-                >
-                  <BookOpen className="mt-0.5 size-3 shrink-0 text-slate-400" />
-                  <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 text-xs font-medium text-slate-700">{linked.name}</p>
-                    {linked.comment && <p className="mt-0.5 line-clamp-2 text-xs text-slate-400">{linked.comment}</p>}
-                  </div>
-                  <button
-                    type="button"
-                    title="Отвязать ресурс"
-                    disabled={isUnlinkingResource}
-                    onClick={() => onUnlinkResource(linked.id)}
-                    className="shrink-0 rounded p-0.5 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100 disabled:pointer-events-none"
-                  >
-                    <X className="size-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setLinkResourceDialogOpen(true)}
-            className="flex items-center gap-1.5 self-start rounded-lg px-2 py-1 text-xs text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-          >
-            <BookOpen className="size-3" />
-            Привязать ресурс
-          </button>
-        </div>
+        <TaskDetailLinkedResourcesSection
+          linkedResources={detail.linkedResources}
+          isUnlinkingResource={isUnlinkingResource}
+          onUnlinkResource={onUnlinkResource}
+          onOpenLinkResourceDialog={() => setLinkResourceDialogOpen(true)}
+        />
 
         <McpPromptShortcuts detail={detail} />
       </aside>

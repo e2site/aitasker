@@ -31,6 +31,11 @@ function createRevisionWindowDocument(targetWindow: Window, title: string): HTML
   targetWindow.document.title = title;
   targetWindow.document.body.innerHTML = '<div id="plan-revision-window-root"></div>';
   targetWindow.document.body.className = "bg-background text-foreground";
+
+  // Inherit dark/light class from parent window
+  const isDark = document.documentElement.classList.contains("dark");
+  targetWindow.document.documentElement.classList.toggle("dark", isDark);
+
   copyDocumentStyles(targetWindow.document);
 
   return targetWindow.document.getElementById("plan-revision-window-root");
@@ -51,15 +56,15 @@ function PlanRevisionWindow(props: PlanRevisionWindowProps) {
   );
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#f7f5f1_0%,#efebe4_100%)] p-6 text-slate-900">
-      <section className="mx-auto max-w-5xl space-y-4 rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+    <main className="min-h-screen bg-background p-6 text-foreground">
+      <section className="mx-auto max-w-5xl space-y-4 rounded-3xl border bg-card p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Ревизия плана</p>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">Ревизия плана</p>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               {formatRevisionDate(props.revision.createdAt)}
             </h1>
-            <p className="text-sm text-slate-600">Источник: {props.revision.source}</p>
+            <p className="text-sm text-foreground/70">Источник: {props.revision.source}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button

@@ -66,13 +66,13 @@ export function ResourceDetailPanel({
     <section className="app-card min-h-[720px] flex flex-col">
       {/* Toolbar */}
       <div className="mb-4 flex items-center justify-between gap-2">
-        <span className="text-xs text-slate-400 font-mono">RES-{resource.id.slice(0, 8).toUpperCase()}</span>
+        <span className="text-xs text-muted-foreground font-mono">RES-{resource.id.slice(0, 8).toUpperCase()}</span>
         <div className="flex items-center gap-1">
           <button
             type="button"
             title="Скопировать промт"
             onClick={copyPrompt}
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground/70"
           >
             {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
           </button>
@@ -87,7 +87,7 @@ export function ResourceDetailPanel({
                 setEditorMode("edit");
               }
             }}
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:pointer-events-none disabled:opacity-40"
+            className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground/70 disabled:pointer-events-none disabled:opacity-40"
           >
             {editorMode === "view" ? <Pencil className="size-4" /> : <Eye className="size-4" />}
           </button>
@@ -99,7 +99,7 @@ export function ResourceDetailPanel({
               const confirmed = window.confirm(`Удалить ресурс "${resource.name}"?`);
               if (confirmed) onDelete(resource.id);
             }}
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:pointer-events-none disabled:opacity-40"
+            className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-600 disabled:pointer-events-none disabled:opacity-40"
           >
             <Trash2 className="size-4" />
           </button>
@@ -110,7 +110,7 @@ export function ResourceDetailPanel({
       {editingName ? (
         <input
           autoFocus
-          className="mb-4 w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-2xl font-semibold tracking-tight text-slate-950 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+          className="mb-4 w-full rounded-lg border bg-background px-2 py-1 text-2xl font-semibold tracking-tight text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
           value={nameDraft}
           disabled={busy}
           onChange={(e) => setNameDraft(e.target.value)}
@@ -122,12 +122,12 @@ export function ResourceDetailPanel({
         />
       ) : (
         <h1
-          className="group mb-4 cursor-text rounded-lg px-2 py-1 text-2xl font-semibold tracking-tight text-slate-950 hover:bg-slate-50"
+          className="group mb-4 cursor-text rounded-lg px-2 py-1 text-2xl font-semibold tracking-tight text-foreground hover:bg-muted/50"
           onClick={() => { setNameDraft(resource.name); setEditingName(true); }}
           title="Нажмите, чтобы редактировать"
         >
           {resource.name}
-          <Pencil className="ml-2 inline size-3.5 text-slate-300 opacity-0 transition group-hover:opacity-100" />
+          <Pencil className="ml-2 inline size-3.5 text-muted-foreground/40 opacity-0 transition group-hover:opacity-100" />
         </h1>
       )}
 
@@ -144,7 +144,7 @@ export function ResourceDetailPanel({
               <button
                 type="button"
                 onClick={() => { setContentDraft(resource.contentMd); setEditorMode("view"); }}
-                className="rounded-lg px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-100"
+                className="rounded-lg px-4 py-2 text-sm text-foreground/70 transition hover:bg-muted"
               >
                 Отмена
               </button>
@@ -152,7 +152,7 @@ export function ResourceDetailPanel({
                 type="button"
                 onClick={saveContent}
                 disabled={isSaving}
-                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-50"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
               >
                 {isSaving ? "Сохранение..." : "Сохранить"}
               </button>
@@ -162,7 +162,7 @@ export function ResourceDetailPanel({
           <MarkdownPlanViewer contentMd={resource.contentMd} />
         ) : (
           <p
-            className="cursor-pointer rounded-lg p-3 text-sm text-slate-400 hover:bg-slate-50"
+            className="cursor-pointer rounded-lg p-3 text-sm text-muted-foreground hover:bg-muted/50"
             onClick={() => setEditorMode("edit")}
           >
             Нет содержимого. Нажмите, чтобы добавить...
@@ -171,7 +171,7 @@ export function ResourceDetailPanel({
       </div>
 
       {/* Метаданные */}
-      <div className="mt-4 flex gap-4 border-t border-slate-100 pt-4 text-xs text-slate-400">
+      <div className="mt-4 flex gap-4 border-t pt-4 text-xs text-muted-foreground">
         <span>Создан: {new Date(resource.createdAt).toLocaleDateString("ru-RU")}</span>
         <span>Обновлён: {new Date(resource.updatedAt).toLocaleString("ru-RU")}</span>
       </div>

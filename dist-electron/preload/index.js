@@ -25,6 +25,8 @@ var channels = {
   onDataChanged: "app:data-changed",
   restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
+  setWindowTheme: "app:set-window-theme",
+  setWindowTitleContext: "app:set-window-title-context",
   unlinkResource: "app:unlink-resource",
   unlinkTask: "app:unlink-task",
   updateResource: "app:update-resource",
@@ -109,6 +111,12 @@ function registerDesktopApi(runtime) {
     },
     savePlan(input) {
       return runtime.ipcRenderer.invoke(channels.savePlan, input);
+    },
+    setWindowTheme(theme) {
+      return runtime.ipcRenderer.invoke(channels.setWindowTheme, theme);
+    },
+    setWindowTitleContext(input) {
+      return runtime.ipcRenderer.invoke(channels.setWindowTitleContext, input);
     },
     updateTaskStatus(input) {
       return runtime.ipcRenderer.invoke(channels.updateTaskStatus, input);

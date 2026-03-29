@@ -35,7 +35,7 @@ export function SearchBar({
   const noMatches = hasQuery && totalCount === 0;
 
   return (
-    <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-1.5 shadow-lg">
+    <div className="inline-flex items-center gap-1 rounded-xl border bg-background px-2 py-1.5 shadow-lg">
       <input
         ref={inputRef}
         type="text"
@@ -58,11 +58,11 @@ export function SearchBar({
         className={`w-44 rounded-lg border px-2 py-1 text-sm outline-none transition ${
           noMatches
             ? "border-rose-300 bg-rose-50 text-rose-700 placeholder:text-rose-300 focus:ring-1 focus:ring-rose-300"
-            : "border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-300"
+            : "border bg-muted/50 text-foreground placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring/30"
         }`}
       />
       {hasQuery && (
-        <span className="min-w-[44px] text-center text-xs text-slate-500">
+        <span className="min-w-[44px] text-center text-xs text-muted-foreground">
           {totalCount === 0 ? "0 / 0" : `${currentIndex + 1} / ${totalCount}`}
         </span>
       )}
@@ -71,7 +71,7 @@ export function SearchBar({
         title="Предыдущее совпадение (Shift+Enter)"
         disabled={totalCount === 0}
         onClick={onPrev}
-        className="rounded-lg p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:pointer-events-none disabled:opacity-40"
+        className="rounded-lg p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
       >
         <ChevronUp className="size-4" />
       </button>
@@ -80,7 +80,7 @@ export function SearchBar({
         title="Следующее совпадение (Enter)"
         disabled={totalCount === 0}
         onClick={onNext}
-        className="rounded-lg p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:pointer-events-none disabled:opacity-40"
+        className="rounded-lg p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
       >
         <ChevronDown className="size-4" />
       </button>
@@ -88,7 +88,7 @@ export function SearchBar({
         type="button"
         title="Закрыть (Escape)"
         onClick={onClose}
-        className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+        className="rounded-lg p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground/70"
       >
         <X className="size-4" />
       </button>

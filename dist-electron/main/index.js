@@ -3689,7 +3689,7 @@ function setupWindowHideOnClose(win, platform, app) {
 }
 
 // src/main/index.ts
-import { Menu as Menu2 } from "electron";
+import { Menu as Menu2, nativeTheme } from "electron";
 var CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
 var APP_ROOT = join3(CURRENT_DIR, "..", "..");
 var RENDERER_DIST = join3(APP_ROOT, "dist");
@@ -3697,6 +3697,8 @@ var PRELOAD_SCRIPT = join3(APP_ROOT, "preload.js");
 var VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 var DATA_CHANGED_CHANNEL = "app:data-changed";
 var FOCUS_TASK_CHANNEL = "app:focus-task";
+var SET_WINDOW_THEME_CHANNEL = "app:set-window-theme";
+var SET_WINDOW_TITLE_CONTEXT_CHANNEL = "app:set-window-title-context";
 var NOTIFY_REASONS = /* @__PURE__ */ new Set([
   "update-task-status",
   "save-plan",
@@ -3744,6 +3746,35 @@ async function sendTaskNotification(event, getWindow, getTaskDetail) {
   notification.show();
 }
 var mainWindow = null;
+var currentWindowTheme = "light";
+var currentWindowTitleContext = {
+  projectName: null,
+  taskTitle: null
+};
+function sanitizeTitlePart(value) {
+  return value.replace(/\s+/g, " ").trim();
+}
+function buildMainWindowTitle(context) {
+  const parts = ["AITasker"];
+  const projectName = context.projectName ? sanitizeTitlePart(context.projectName) : "";
+  const taskTitle = context.taskTitle ? sanitizeTitlePart(context.taskTitle) : "";
+  if (projectName) {
+    parts.push(projectName);
+  }
+  if (taskTitle) {
+    parts.push(taskTitle);
+  }
+  return parts.join(" / ");
+}
+function applyMainWindowTitle() {
+  mainWindow?.setTitle(buildMainWindowTitle(currentWindowTitleContext));
+}
+function applyMainWindowTheme() {
+  if (process.platform !== "win32") {
+    return;
+  }
+  nativeTheme.themeSource = currentWindowTheme;
+}
 async function createMainWindow(runtime) {
   const windowIconPath = getWindowIconPath(runtime.app);
   mainWindow = new runtime.BrowserWindow({
@@ -3763,6 +3794,8 @@ async function createMainWindow(runtime) {
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
   });
+  applyMainWindowTitle();
+  applyMainWindowTheme();
   if (VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });
@@ -3840,6 +3873,20 @@ function bootstrapMainProcess(runtime) {
       mcpEndpoint: mcpHttpServer.endpoint
     });
     registerIpcHandlers(runtime.ipcMain, appService);
+    runtime.ipcMain.handle(SET_WINDOW_THEME_CHANNEL, (_event, theme) => {
+      currentWindowTheme = theme === "dark" ? "dark" : "light";
+      applyMainWindowTheme();
+    });
+    runtime.ipcMain.handle(
+      SET_WINDOW_TITLE_CONTEXT_CHANNEL,
+      (_event, input) => {
+        currentWindowTitleContext = {
+          projectName: input.projectName,
+          taskTitle: input.taskTitle
+        };
+        applyMainWindowTitle();
+      }
+    );
     await createMainWindow(runtime);
     createAppTray(() => mainWindow, runtime.app, shutdownApp);
     if (mainWindow) {

@@ -180,17 +180,17 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
     >
-      <div className="flex w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl" style={{ maxHeight: "90vh" }}>
+      <div className="flex w-full max-w-4xl flex-col rounded-2xl border bg-background shadow-xl" style={{ maxHeight: "90vh" }}>
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <div className="flex items-center gap-2 text-slate-800">
-            <Settings2 className="size-4 text-slate-500" />
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <div className="flex items-center gap-2 text-foreground">
+            <Settings2 className="size-4 text-muted-foreground" />
             <span className="font-medium text-sm">Переопределение промтов</span>
           </div>
           <button
             type="button"
             onClick={handleClose}
-            className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            className="rounded-lg p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground/70"
           >
             <X className="size-4" />
           </button>
@@ -199,7 +199,7 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
         {/* Body */}
         <div className="flex min-h-0 flex-1">
           {/* Left: prompt list + статусы-шпаргалка */}
-          <div className="flex w-52 shrink-0 flex-col border-r border-slate-100 overflow-y-auto">
+          <div className="flex w-52 shrink-0 flex-col border-r overflow-y-auto">
             <div className="flex flex-col gap-0.5 p-3">
               {PROMPT_IDS.map((id) => {
                 const saved = getSavedTemplate(id);
@@ -212,8 +212,8 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
                     className={cn(
                       "flex flex-col gap-0.5 rounded-lg px-3 py-2 text-left text-sm transition",
                       selectedId === id
-                        ? "bg-slate-100 text-slate-900"
-                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+                        ? "bg-muted text-foreground"
+                        : "text-foreground/70 hover:bg-muted/50 hover:text-foreground"
                     )}
                   >
                     <span className="font-medium leading-5">{PROMPT_LABELS[id]}</span>
@@ -223,7 +223,7 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
                       ) : saved ? (
                         <span className="text-emerald-600">переопределён</span>
                       ) : (
-                        <span className="text-slate-400">базовый</span>
+                        <span className="text-muted-foreground">базовый</span>
                       )}
                     </span>
                   </button>
@@ -232,8 +232,8 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
             </div>
 
             {/* Шпаргалка по статусам */}
-            <div className="mx-3 mb-3 mt-auto rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
-              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <div className="mx-3 mb-3 mt-auto rounded-lg border bg-muted/50 px-3 py-2.5">
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 Статусы задач
               </p>
               <div className="space-y-1">
@@ -243,12 +243,12 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
                     type="button"
                     title={`Копировать: ${value}`}
                     onClick={() => handleCopyStatus(value)}
-                    className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 transition hover:bg-slate-100"
+                    className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 transition hover:bg-muted"
                   >
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${promptGuideClass}`}>
                       {label}
                     </span>
-                    <code className="text-[10px] text-slate-400">
+                    <code className="text-[10px] text-muted-foreground">
                       {copiedStatus === value ? "✓" : value}
                     </code>
                   </button>
@@ -261,8 +261,8 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
           <div className="flex min-w-0 flex-1 flex-col gap-3 p-5 overflow-y-auto">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <p className="text-sm font-semibold text-slate-900">{PROMPT_LABELS[selectedId]}</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-sm font-semibold text-foreground">{PROMPT_LABELS[selectedId]}</p>
+                <p className="text-xs text-muted-foreground">
                   {isOverridden ? "Переопределён — используется ваш шаблон" : "Базовый — переопределение не задано"}
                 </p>
               </div>
@@ -272,8 +272,8 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition",
                   showPreview
-                    ? "bg-slate-800 text-white"
-                    : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    ? "bg-primary text-primary-foreground"
+                    : "border text-foreground/70 hover:bg-muted/50"
                 )}
               >
                 <Eye className="size-3.5" />
@@ -282,7 +282,7 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
             </div>
 
             {showPreview ? (
-              <div className="min-h-48 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 whitespace-pre-wrap">
+              <div className="min-h-48 rounded-lg border bg-muted/50 px-3 py-2.5 text-sm text-foreground/70 whitespace-pre-wrap">
                 {previewText}
               </div>
             ) : (
@@ -291,17 +291,17 @@ export function PromptOverridesDialog({ detail, isOpen, onClose }: PromptOverrid
                 rows={12}
                 value={currentValue}
                 onChange={(e) => setEditorValues((prev) => ({ ...prev, [selectedId]: e.target.value }))}
-                className="w-full resize-y rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-300"
+                className="w-full resize-y rounded-lg border px-3 py-2 font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring/30 bg-background"
               />
             )}
 
             {!showPreview && (
-              <p className="text-xs text-slate-400">
-                Используйте <code className="rounded bg-slate-100 px-1">{"{{projectName}}"}</code>,{" "}
-                <code className="rounded bg-slate-100 px-1">{"{{taskTitle}}"}</code>,{" "}
-                <code className="rounded bg-slate-100 px-1">{"{{taskId}}"}</code>,{" "}
-                <code className="rounded bg-slate-100 px-1">{"{{projectPath}}"}</code>,{" "}
-                <code className="rounded bg-slate-100 px-1">{"{{skillFilePath}}"}</code>{" "}
+              <p className="text-xs text-muted-foreground">
+                Используйте <code className="rounded bg-muted px-1">{"{{projectName}}"}</code>,{" "}
+                <code className="rounded bg-muted px-1">{"{{taskTitle}}"}</code>,{" "}
+                <code className="rounded bg-muted px-1">{"{{taskId}}"}</code>,{" "}
+                <code className="rounded bg-muted px-1">{"{{projectPath}}"}</code>,{" "}
+                <code className="rounded bg-muted px-1">{"{{skillFilePath}}"}</code>{" "}
                 для подстановки значений.
               </p>
             )}

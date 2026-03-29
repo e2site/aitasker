@@ -11,9 +11,9 @@ export interface TaskSessionTabProps {
 export function TaskSessionTab({ detail }: TaskSessionTabProps) {
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="rounded-xl border bg-muted/50 p-4">
         <p className="app-label">Agent session</p>
-        <div className="mt-3 space-y-2 text-sm text-slate-600">
+        <div className="mt-3 space-y-2 text-sm text-foreground/70">
           <p>Provider: {detail.agentSession?.provider ?? "mcp"}</p>
           <p>Status: {detail.agentSession?.status ?? "idle"}</p>
           <p>MCP-ready: current task and plan are exposed through tools, resources, and prompt workflow</p>

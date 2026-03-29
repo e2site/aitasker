@@ -389,6 +389,12 @@ export const desktopDataChangeEventSchema = z.object({
   taskId: z.string().nullable()
 });
 export type DesktopDataChangeEvent = z.infer<typeof desktopDataChangeEventSchema>;
+export type WindowTheme = "light" | "dark";
+
+export interface SetWindowTitleContextInput {
+  projectName: string | null;
+  taskTitle: string | null;
+}
 
 export interface DesktopApi {
   appendPlanExtension(input: AppendPlanExtensionInput): Promise<TaskDetail>;
@@ -417,6 +423,8 @@ export interface DesktopApi {
   onFocusTask(listener: (taskId: string) => void): () => void;
   restorePlanRevision(input: RestorePlanRevisionInput): Promise<TaskDetail>;
   savePlan(input: SavePlanInput): Promise<TaskDetail>;
+  setWindowTheme(theme: WindowTheme): Promise<void>;
+  setWindowTitleContext(input: SetWindowTitleContextInput): Promise<void>;
   unlinkResource(input: UnlinkResourceInput): Promise<TaskDetail>;
   unlinkTask(input: UnlinkTaskInput): Promise<TaskDetail>;
   updateProjectProfile(input: UpdateProjectProfileInput): Promise<ProjectRecord>;

@@ -81,6 +81,18 @@ export function HomePage() {
   const taskDetailQuery = useTaskDetailQuery(selectedTaskId);
   const allTasks = tasksQuery.data ?? [];
   const projects = projectsQuery.data ?? [];
+  const selectedTask = selectedTaskId ? allTasks.find((task) => task.id === selectedTaskId) ?? null : null;
+  const selectedProjectName = selectedProjectId
+    ? projects.find((project) => project.id === selectedProjectId)?.name ?? selectedTask?.projectName ?? null
+    : selectedTask?.projectName ?? null;
+  const selectedTaskTitle = selectedTask?.title ?? null;
+
+  useEffect(() => {
+    void window.desktop.setWindowTitleContext({
+      projectName: selectedProjectName,
+      taskTitle: selectedTaskTitle
+    });
+  }, [selectedProjectName, selectedTaskTitle]);
 
   const visibleTasks = selectedProjectId
     ? allTasks.filter((task) => task.projectId === selectedProjectId)

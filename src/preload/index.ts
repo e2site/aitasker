@@ -17,13 +17,15 @@ import type {
   LinkTaskInput,
   RestorePlanRevisionInput,
   SavePlanInput,
+  SetWindowTitleContextInput,
   UnlinkResourceInput,
   UnlinkTaskInput,
   UpdateResourceInput,
   UpdateTaskInput,
   UpdateTaskStatusInput,
   UpdateProjectProfileInput,
-  UpsertPromptOverrideInput
+  UpsertPromptOverrideInput,
+  WindowTheme
 } from "../shared/contracts/desktop-api";
 import type { ContextBridge, IpcRenderer } from "electron";
 
@@ -58,6 +60,8 @@ const channels = {
   onDataChanged: "app:data-changed",
   restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
+  setWindowTheme: "app:set-window-theme",
+  setWindowTitleContext: "app:set-window-title-context",
   unlinkResource: "app:unlink-resource",
   unlinkTask: "app:unlink-task",
   updateResource: "app:update-resource",
@@ -147,6 +151,12 @@ export function registerDesktopApi(runtime: PreloadRuntime): void {
     },
     savePlan(input: SavePlanInput) {
       return runtime.ipcRenderer.invoke(channels.savePlan, input);
+    },
+    setWindowTheme(theme: WindowTheme) {
+      return runtime.ipcRenderer.invoke(channels.setWindowTheme, theme);
+    },
+    setWindowTitleContext(input: SetWindowTitleContextInput) {
+      return runtime.ipcRenderer.invoke(channels.setWindowTitleContext, input);
     },
     updateTaskStatus(input: UpdateTaskStatusInput) {
       return runtime.ipcRenderer.invoke(channels.updateTaskStatus, input);

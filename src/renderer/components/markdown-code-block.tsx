@@ -27,7 +27,11 @@ async function highlightCode(code: string, language: string | null): Promise<str
   try {
     const html = await codeToHtml(code, {
       lang: normalizedLanguage,
-      theme: "github-light"
+      themes: {
+        light: "github-light",
+        dark: "github-dark"
+      },
+      defaultColor: false
     });
 
     highlightedCodeCache.set(cacheKey, html);

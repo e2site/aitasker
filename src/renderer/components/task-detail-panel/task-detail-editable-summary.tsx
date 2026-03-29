@@ -69,7 +69,7 @@ export function TaskDetailEditableSummary({
       {editingTitle ? (
         <input
           autoFocus
-          className="mb-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-2xl font-semibold tracking-tight text-slate-950 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+          className="mb-2 w-full rounded-lg border bg-background px-2 py-1 text-2xl font-semibold tracking-tight text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
           value={titleDraft}
           disabled={isUpdatingTask}
           onChange={(event) => setTitleDraft(event.target.value)}
@@ -91,7 +91,7 @@ export function TaskDetailEditableSummary({
         />
       ) : (
         <h1
-          className="group mb-2 cursor-text rounded-lg px-2 py-1 text-2xl font-semibold tracking-tight text-slate-950 hover:bg-slate-50"
+          className="group mb-2 cursor-text rounded-lg px-2 py-1 text-2xl font-semibold tracking-tight text-foreground hover:bg-muted/50"
           onClick={() => {
             setTitleDraft(detail.task.title);
             setEditingTitle(true);
@@ -99,7 +99,7 @@ export function TaskDetailEditableSummary({
           title="Нажмите, чтобы редактировать"
         >
           {detail.task.title}
-          <Pencil className="ml-2 inline size-3.5 text-slate-300 opacity-0 transition group-hover:opacity-100" />
+          <Pencil className="ml-2 inline size-3.5 text-muted-foreground/40 opacity-0 transition group-hover:opacity-100" />
         </h1>
       )}
 
@@ -110,7 +110,7 @@ export function TaskDetailEditableSummary({
             <button
               type="button"
               onClick={() => setEditingDescription(false)}
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-100"
+              className="rounded-lg px-3 py-1.5 text-sm text-foreground/70 transition hover:bg-muted"
             >
               Отмена
             </button>
@@ -124,7 +124,7 @@ export function TaskDetailEditableSummary({
                 }
                 setEditingDescription(false);
               }}
-              className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-50"
+              className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             >
               {isUpdatingTask ? "Сохранение..." : "Сохранить"}
             </button>
@@ -154,7 +154,7 @@ export function TaskDetailEditableSummary({
                   <MarkdownPlanViewer contentMd={detail.task.description} />
                 </div>
                 {!descriptionExpanded && hasDescriptionOverflow && (
-                  <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white to-transparent" />
+                  <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-background to-transparent" />
                 )}
               </div>
               <div className="mt-1 flex items-center gap-3">
@@ -162,7 +162,7 @@ export function TaskDetailEditableSummary({
                   <button
                     type="button"
                     onClick={() => setDescriptionExpanded(!descriptionExpanded)}
-                    className="flex items-center gap-1 text-xs text-slate-400 transition hover:text-slate-600"
+                    className="flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground/70"
                   >
                     {descriptionExpanded ? (
                       <>
@@ -182,7 +182,7 @@ export function TaskDetailEditableSummary({
                       setDescriptionDraft(detail.task.description);
                       setEditingDescription(true);
                     }}
-                    className="flex items-center gap-1 text-xs text-slate-400 transition hover:text-slate-600"
+                    className="flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground/70"
                   >
                     <Pencil className="size-3" /> Редактировать
                   </button>
@@ -191,7 +191,7 @@ export function TaskDetailEditableSummary({
             </>
           ) : detail.task.status === "new" ? (
             <p
-              className="cursor-text rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-50"
+              className="cursor-text rounded-lg px-2 py-1 text-sm text-muted-foreground hover:bg-muted/50"
               onClick={() => {
                 setDescriptionDraft("");
                 setEditingDescription(true);

@@ -13,13 +13,14 @@
 */
 @custom-variant dark (&:is(.dark *));
 
-:root {
+:root,
+:root.light {
   color-scheme: light;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.992 0.0015 92);
+  --foreground: #0d1117;
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
-  --border: oklch(0.922 0 0);
+  --border: oklch(92.191% 0.0001 271.152);
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
   --primary: oklch(0.205 0 0);
@@ -39,7 +40,7 @@
   --chart-3: oklch(0.546 0.245 262.881);
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
-  --radius: 0.625rem;
+  --radius: 0.225rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -297,8 +298,22 @@ textarea {
   @apply my-5 overflow-hidden rounded-xl border border-border bg-muted;
 }
 
+/* Shiki dual-theme support */
+.shiki,
+.shiki span {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg);
+}
+
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
+}
+
 .app-code-block pre {
-  @apply m-0 overflow-x-auto rounded-none border-0 bg-transparent p-4 shadow-none outline-none;
+  @apply m-0 overflow-x-auto rounded-none border-0 p-4 shadow-none outline-none;
+  background-color: transparent !important;
 }
 
 .app-code-block pre:focus,
@@ -403,9 +418,11 @@ mark.search-highlight.active {
   color: white;
 }
 
+:root.dark,
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
+  color-scheme: dark;
+  --background: #111111;
+  --foreground: #f0f6fc;
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);

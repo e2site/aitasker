@@ -18,7 +18,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  new: "bg-slate-100 text-slate-600",
+  new: "bg-muted text-foreground/70",
   planning: "bg-sky-100 text-sky-700",
   requires_clarification: "bg-red-100 text-red-700",
   implementation: "bg-amber-100 text-amber-700",
@@ -110,11 +110,11 @@ export function LinkTaskDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl">
+      <div className="w-full max-w-lg rounded-2xl border bg-background shadow-xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <div className="flex items-center gap-2 text-slate-800">
-            <Link className="size-4 text-slate-500" />
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <div className="flex items-center gap-2 text-foreground">
+            <Link className="size-4 text-muted-foreground" />
             <span className="font-medium text-sm">
               {step === "search" ? "Привязать задачу" : "Подтверждение связи"}
             </span>
@@ -122,7 +122,7 @@ export function LinkTaskDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            className="rounded-lg p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground/70"
           >
             <X className="size-4" />
           </button>
@@ -132,20 +132,20 @@ export function LinkTaskDialog({
         {step === "search" && (
           <div className="flex flex-col gap-3 p-5">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 ref={searchInputRef}
                 type="text"
                 placeholder="Поиск по названию, описанию или проекту..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-300"
+                className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm text-foreground bg-background outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring/30"
               />
             </div>
 
             <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
               {filteredTasks.length === 0 ? (
-                <p className="py-6 text-center text-sm text-slate-400">
+                <p className="py-6 text-center text-sm text-muted-foreground">
                   {searchQuery ? "Ничего не найдено" : "Нет доступных задач для привязки"}
                 </p>
               ) : (
@@ -154,20 +154,20 @@ export function LinkTaskDialog({
                     key={task.id}
                     type="button"
                     onClick={() => handleSelectTask(task)}
-                    className="flex flex-col gap-1 rounded-xl px-3 py-2.5 text-left transition hover:bg-slate-50"
+                    className="flex flex-col gap-1 rounded-xl px-3 py-2.5 text-left transition hover:bg-muted/50"
                   >
                     <div className="flex items-center gap-2">
                       <span
                         className={cn(
                           "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
-                          STATUS_COLORS[task.status] ?? "bg-slate-100 text-slate-600"
+                          STATUS_COLORS[task.status] ?? "bg-muted text-foreground/70"
                         )}
                       >
                         {STATUS_LABELS[task.status] ?? task.status}
                       </span>
-                      <span className="text-xs text-slate-400">{task.projectName}</span>
+                      <span className="text-xs text-muted-foreground">{task.projectName}</span>
                     </div>
-                    <span className="text-sm font-medium text-slate-800 line-clamp-1">{task.title}</span>
+                    <span className="text-sm font-medium text-foreground line-clamp-1">{task.title}</span>
                   </button>
                 ))
               )}
@@ -178,24 +178,24 @@ export function LinkTaskDialog({
         {/* Step 2: Confirm */}
         {step === "confirm" && selectedTask && (
           <div className="flex flex-col gap-4 p-5">
-            <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+            <div className="rounded-xl border bg-muted/50 px-4 py-3">
               <div className="flex items-center gap-2 mb-1">
                 <span
                   className={cn(
                     "rounded-full px-2 py-0.5 text-xs font-medium",
-                    STATUS_COLORS[selectedTask.status] ?? "bg-slate-100 text-slate-600"
+                    STATUS_COLORS[selectedTask.status] ?? "bg-muted text-foreground/70"
                   )}
                 >
                   {STATUS_LABELS[selectedTask.status] ?? selectedTask.status}
                 </span>
-                <span className="text-xs text-slate-400">{selectedTask.projectName}</span>
+                <span className="text-xs text-muted-foreground">{selectedTask.projectName}</span>
               </div>
-              <p className="text-sm font-medium text-slate-800">{selectedTask.title}</p>
+              <p className="text-sm font-medium text-foreground">{selectedTask.title}</p>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-slate-600">
-                Комментарий к связи <span className="font-normal text-slate-400">(необязательно)</span>
+              <label className="text-xs font-medium text-foreground/70">
+                Комментарий к связи <span className="font-normal text-muted-foreground">(необязательно)</span>
               </label>
               <textarea
                 rows={3}
@@ -203,16 +203,16 @@ export function LinkTaskDialog({
                 value={comment}
                 maxLength={500}
                 onChange={(e) => setComment(e.target.value)}
-                className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-300"
+                className="w-full resize-none rounded-lg border px-3 py-2 text-sm text-foreground bg-background outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring/30"
               />
-              <span className="self-end text-xs text-slate-400">{comment.length}/500</span>
+              <span className="self-end text-xs text-muted-foreground">{comment.length}/500</span>
             </div>
 
             <div className="flex gap-2 justify-end">
               <button
                 type="button"
                 onClick={handleBackToSearch}
-                className="rounded-lg px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-100"
+                className="rounded-lg px-4 py-2 text-sm text-foreground/70 transition hover:bg-muted"
               >
                 Назад
               </button>
@@ -220,7 +220,7 @@ export function LinkTaskDialog({
                 type="button"
                 onClick={handleLink}
                 disabled={isLinking}
-                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-50"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
               >
                 {isLinking ? "Привязка..." : "Привязать"}
               </button>

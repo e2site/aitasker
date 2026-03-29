@@ -12,8 +12,8 @@ export interface TaskDetailMetaFieldProps {
 export function TaskDetailMetaField({ label, value }: TaskDetailMetaFieldProps) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</span>
-      <span className="text-sm text-slate-700">{value || <em className="not-italic text-slate-300">нет</em>}</span>
+      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</span>
+      <span className="text-sm text-foreground/70">{value || <em className="not-italic text-muted-foreground/50">нет</em>}</span>
     </div>
   );
 }

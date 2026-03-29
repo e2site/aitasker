@@ -111,7 +111,7 @@ export function ProjectCard({ project, isUpdating, onSave }: ProjectCardProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="pc-languages">Языки <span className="text-slate-400">(через запятую)</span></Label>
+            <Label htmlFor="pc-languages">Языки <span className="text-muted-foreground">(через запятую)</span></Label>
             <Input
               id="pc-languages"
               value={languages}
@@ -150,8 +150,8 @@ export function ProjectCard({ project, isUpdating, onSave }: ProjectCardProps) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <FolderOpen className="size-3.5 shrink-0 text-slate-400" />
-            <p className="truncate text-sm font-semibold text-slate-900">{project.name}</p>
+            <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+            <p className="truncate text-sm font-semibold text-foreground">{project.name}</p>
             {project.isProfileComplete ? (
               <span className="ml-1 inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
                 <Check className="size-2.5" /> заполнен
@@ -163,9 +163,9 @@ export function ProjectCard({ project, isUpdating, onSave }: ProjectCardProps) {
             )}
           </div>
           {project.description ? (
-            <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{project.description}</p>
+            <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{project.description}</p>
           ) : (
-            <p className="mt-1 text-xs text-slate-400 italic">Описание не заполнено</p>
+            <p className="mt-1 text-xs text-muted-foreground/60 italic">Описание не заполнено</p>
           )}
         </div>
 
@@ -193,7 +193,7 @@ export function ProjectCard({ project, isUpdating, onSave }: ProjectCardProps) {
       </div>
 
       {/* Meta fields */}
-      <div className="space-y-1.5 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+      <div className="space-y-1.5 rounded-lg border bg-muted/40 px-3 py-2.5">
         <MetaRow label="ID" value={project.id} mono />
         <MetaRow label="Путь" value={project.rootPath ?? "—"} mono />
         <MetaRow
@@ -209,10 +209,10 @@ export function ProjectCard({ project, isUpdating, onSave }: ProjectCardProps) {
 function MetaRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex items-baseline gap-2">
-      <span className="w-14 shrink-0 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
+      <span className="w-14 shrink-0 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
         {label}
       </span>
-      <span className={`min-w-0 truncate text-xs text-slate-600 ${mono ? "font-mono" : ""}`}>
+      <span className={`min-w-0 truncate text-xs text-foreground/70 ${mono ? "font-mono" : ""}`}>
         {value}
       </span>
     </div>

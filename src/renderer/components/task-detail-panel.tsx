@@ -100,7 +100,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
 
   if (!props.detail) {
     return (
-      <section className="app-card flex min-h-[720px] items-center justify-center text-center text-slate-500">
+      <section className="app-card flex min-h-[720px] items-center justify-center text-center text-muted-foreground">
         Выберите задачу слева или создайте новую, чтобы открыть карточку и план.
       </section>
     );
@@ -120,7 +120,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
     <section className="app-card grid min-h-[720px] grid-cols-1 lg:grid-cols-[1fr_260px]">
       <div className="flex min-w-0 flex-col pr-0 lg:pr-6">
         <div className="mb-4 flex items-center justify-between gap-2">
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted-foreground">
             {detail.task.projectName} <span className="mx-1">/</span> {detail.task.title}
           </p>
           <div className="flex items-center gap-1">
@@ -130,7 +130,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                 title={props.editorMode === "view" ? "Редактировать план" : "Просмотр"}
                 disabled={props.isDeletingTask}
                 onClick={() => props.onSetEditorMode(props.editorMode === "view" ? "edit" : "view")}
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:pointer-events-none disabled:opacity-40"
+                className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground/70 disabled:pointer-events-none disabled:opacity-40"
               >
                 {props.editorMode === "view" ? <Pencil className="size-4" /> : <Eye className="size-4" />}
               </button>
@@ -140,7 +140,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                 title="Создать план вручную"
                 disabled={props.isDeletingTask}
                 onClick={() => props.onSetEditorMode("edit")}
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:pointer-events-none disabled:opacity-40"
+                className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground/70 disabled:pointer-events-none disabled:opacity-40"
               >
                 <FilePlus className="size-4" />
               </button>
@@ -150,7 +150,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
               title="Удалить задачу"
               disabled={busy}
               onClick={() => props.onDeleteTask(detail.task.id)}
-              className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:pointer-events-none disabled:opacity-40"
+              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-600 disabled:pointer-events-none disabled:opacity-40"
             >
               <Trash2 className="size-4" />
             </button>
@@ -158,7 +158,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
         </div>
 
         <div className="mb-3 flex items-center gap-3">
-          <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-500">
+          <span className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
             TASK-{detail.task.id.slice(0, 8).toUpperCase()}
           </span>
           <div className="w-48">
@@ -179,15 +179,15 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
           onUpdateTask={props.onUpdateTask}
         />
 
-        <div className="mb-5 flex gap-0 border-b border-slate-200">
+        <div className="mb-5 flex gap-0 border-b">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition ${
                 activeTab === tab.id
-                  ? "border-slate-900 text-slate-900"
-                  : "border-transparent text-slate-500 hover:text-slate-800"
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground/70"
               }`}
               onClick={() => setActiveTab(tab.id)}
             >

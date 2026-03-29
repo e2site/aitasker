@@ -3,7 +3,14 @@
 Не входит: Отрисовка компонентов и локальное UI-состояние.
 */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CreateTaskInput, LinkTaskInput, UnlinkTaskInput, UpdateTaskInput, UpdateTaskStatusInput } from "@/shared/contracts/desktop-api";
+import type {
+  CreateTaskInput,
+  LinkTaskInput,
+  TaskRecord,
+  UnlinkTaskInput,
+  UpdateTaskInput,
+  UpdateTaskStatusInput
+} from "@/shared/contracts/desktop-api";
 
 export function useTasksQuery() {
   return useQuery({
@@ -26,6 +33,11 @@ export function useCreateTaskMutation() {
   return useMutation({
     mutationFn: (input: CreateTaskInput) => window.desktop.createTask(input),
     onSuccess: async (detail) => {
+      queryClient.setQueryData<TaskRecord[]>(["tasks"], (previous = []) => {
+        const nextTask = detail.task;
+        const withoutCurrent = previous.filter((task) => task.id !== nextTask.id);
+        return [nextTask, ...withoutCurrent];
+      });
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       queryClient.setQueryData(["task-detail", detail.task.id], detail);
@@ -39,7 +51,11 @@ export function useDeleteTaskMutation() {
   return useMutation({
     mutationFn: (taskId: string) => window.desktop.deleteTask(taskId),
     onSuccess: async ({ deletedTaskId }) => {
+      queryClient.setQueryData<TaskRecord[]>(["tasks"], (previous = []) =>
+        previous.filter((task) => task.id !== deletedTaskId)
+      );
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
       queryClient.removeQueries({ queryKey: ["task-detail", deletedTaskId], exact: true });
     }
   });

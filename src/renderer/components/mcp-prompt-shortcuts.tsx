@@ -43,10 +43,10 @@ export function McpPromptShortcuts({ detail }: McpPromptShortcutsProps) {
   }, [copiedPromptId]);
 
   return (
-    <section className="self-start rounded-2xl border border-slate-200 bg-slate-50 p-3 lg:sticky lg:top-6">
+    <section className="self-start rounded-2xl border bg-muted/50 p-3 lg:sticky lg:top-6">
       <div className="mb-3 space-y-1">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Быстрые MCP-промты</p>
-        <p className="text-xs leading-5 text-slate-600">Скопируйте сценарий без перехода на вкладку workflow.</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Быстрые MCP-промты</p>
+        <p className="text-xs leading-5 text-foreground/70">Скопируйте сценарий без перехода на вкладку workflow.</p>
       </div>
 
       <div className="space-y-2">

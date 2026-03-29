@@ -24,7 +24,7 @@ const KIND_LABEL: Record<CommentKind, string> = {
 };
 
 const KIND_BADGE_CLASSES: Record<ThreadKind, string> = {
-  discussion: "bg-slate-100 text-slate-700",
+  discussion: "bg-muted text-foreground/70",
   extension: "bg-sky-100 text-sky-700",
   improvement: "bg-violet-100 text-violet-700",
 };
@@ -214,13 +214,13 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
           ) : props.detail.plan ? (
             <div className="space-y-4">
               {/* Ревизии */}
-              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <section className="rounded-2xl border bg-muted/50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <History className="size-4 text-slate-500" />
+                    <History className="size-4 text-muted-foreground" />
                     <div>
-                      <p className="text-sm font-semibold text-slate-900">Ревизии</p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-sm font-semibold text-foreground">Ревизии</p>
+                      <p className="text-xs text-muted-foreground">
                         {revisions.length === 0
                           ? "Ревизии появляются только после пересохранения плана со стороны MCP."
                           : "Выберите ревизию, чтобы открыть ее в новом окне."}
@@ -297,11 +297,11 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
               </div>
 
               {/* Единый диалог-тред */}
-              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <section className="rounded-2xl border bg-muted/50 p-4">
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div className="space-y-1">
-                    <p className="text-sm font-semibold text-slate-900">Обсуждение</p>
-                    <p className="text-sm leading-6 text-slate-600">
+                    <p className="text-sm font-semibold text-foreground">Обсуждение</p>
+                    <p className="text-sm leading-6 text-foreground/70">
                       Расширения и доработки плана в виде диалога с AI-агентом.
                     </p>
                   </div>
@@ -352,7 +352,7 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
                 {/* Тред сообщений */}
                 <div className="space-y-5">
                   {threadItems.length === 0 && openQuestions.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+                    <div className="rounded-xl border border-dashed bg-background p-4 text-sm text-muted-foreground">
                       Обсуждений пока нет.
                     </div>
                   ) : (
@@ -444,7 +444,7 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
 
                 {/* Composer */}
                 {composerOpen ? (
-                  <div ref={composerRef} className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div ref={composerRef} className="mt-4 rounded-2xl border bg-background p-4">
                     {/* Выбор типа */}
                     <div className="mb-3 flex gap-2">
                       {(["extension", "improvement"] as CommentKind[]).map((kind) => (
@@ -454,8 +454,8 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
                           onClick={() => setComposerKind(kind)}
                           className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
                             composerKind === kind
-                              ? "border-slate-900 bg-slate-900 text-white"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border text-foreground/70 hover:bg-muted/50"
                           }`}
                         >
                           {KIND_LABEL[kind]}
@@ -508,7 +508,7 @@ export function TaskPlanWorkspace(props: TaskPlanWorkspaceProps) {
             </div>
           ) : null
         ) : (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
+          <div className="rounded-xl border border-dashed bg-muted/50 p-6 text-sm text-muted-foreground">
             Плана еще нет. Сгенерируйте и сохраните его через внешний MCP-клиент или создайте Markdown вручную.
           </div>
         )}
@@ -527,13 +527,13 @@ interface QuestionCardProps {
 
 function QuestionCard(props: QuestionCardProps) {
   return (
-    <article className="rounded-2xl border border-amber-200 bg-[linear-gradient(180deg,rgba(255,251,235,0.96),rgba(255,255,255,0.98))] p-4 shadow-sm">
+    <article className="rounded-2xl border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Вопрос</p>
-          <p className="text-sm leading-6 text-slate-800">{props.question.content}</p>
+          <p className="text-sm leading-6 text-foreground">{props.question.content}</p>
         </div>
-        <span className="text-xs text-slate-500">{formatCommentDate(props.question.createdAt)}</span>
+        <span className="text-xs text-muted-foreground">{formatCommentDate(props.question.createdAt)}</span>
       </div>
 
       <textarea
@@ -569,7 +569,7 @@ function QAPairCard({ question, searchQuery }: QAPairCardProps) {
                 вопрос
               </span>
             </div>
-            <span className="text-xs text-slate-400">{formatCommentDate(question.createdAt)}</span>
+            <span className="text-xs text-muted-foreground">{formatCommentDate(question.createdAt)}</span>
           </div>
           <div className="plan-thread-message__body">
             <MarkdownPlanViewer
@@ -590,7 +590,7 @@ function QAPairCard({ question, searchQuery }: QAPairCardProps) {
                   ответ
                 </span>
               </div>
-              <span className="text-xs text-slate-400">{formatCommentDate(question.answeredAt)}</span>
+              <span className="text-xs text-muted-foreground">{formatCommentDate(question.answeredAt)}</span>
             </div>
             <div className="plan-thread-message__body">
               <MarkdownPlanViewer

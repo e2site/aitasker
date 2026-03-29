@@ -49,14 +49,14 @@ export function McpPlanningPanel({ detail }: McpPlanningPanelProps) {
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
             <p className="app-label">Планирование через MCP</p>
-            <h3 className="text-xl font-semibold tracking-tight text-slate-950">Базовый flow по задаче</h3>
-            <p className="max-w-3xl text-sm leading-6 text-slate-600">
+            <h3 className="text-xl font-semibold tracking-tight text-foreground">Базовый flow по задаче</h3>
+            <p className="max-w-3xl text-sm leading-6 text-foreground/70">
               Внешний агент должен работать через короткие JSON-команды с явным `projectId`, чтобы сценарий не
               зависел от случайно сменившегося активного проекта.
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-right shadow-sm">
-            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Профиль проекта</p>
+          <div className="rounded-2xl border bg-card px-4 py-3 text-right shadow-sm">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Профиль проекта</p>
             <p className={`mt-1 text-sm font-semibold ${projectProfileReady ? "text-emerald-700" : "text-amber-700"}`}>
               {projectProfileReady ? "Заполнен" : "Нужно заполнить"}
             </p>
@@ -96,16 +96,16 @@ export function McpPlanningPanel({ detail }: McpPlanningPanelProps) {
         </article>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <div className="flex items-center gap-2 text-slate-900">
+      <section className="rounded-2xl border bg-muted/50 p-4">
+        <div className="flex items-center gap-2 text-foreground">
           <Workflow className="size-4" />
           <p className="text-sm font-semibold">Текущее состояние проекта и задачи</p>
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl bg-white p-3 text-sm text-slate-600 shadow-sm">
-            <p className="font-semibold text-slate-900">Проект</p>
+          <div className="rounded-xl bg-card p-3 text-sm text-foreground/70 shadow-sm">
+            <p className="font-semibold text-foreground">Проект</p>
             <p className="mt-1">{detail.task.projectName}</p>
-            <p className="mt-2 text-xs leading-5 text-slate-500">
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
               Путь: {detail.project.rootPath || "не заполнен"}
               <br />
               Языки: {detail.project.languages.length ? detail.project.languages.join(", ") : "не заполнены"}
@@ -113,10 +113,10 @@ export function McpPlanningPanel({ detail }: McpPlanningPanelProps) {
               SKILL.md: {detail.project.skillFilePath || "не указан"}
             </p>
           </div>
-          <div className="rounded-xl bg-white p-3 text-sm text-slate-600 shadow-sm">
-            <p className="font-semibold text-slate-900">Задача</p>
+          <div className="rounded-xl bg-card p-3 text-sm text-foreground/70 shadow-sm">
+            <p className="font-semibold text-foreground">Задача</p>
             <p className="mt-1">{detail.task.title}</p>
-            <p className="mt-2 text-xs leading-5 text-slate-500">
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
               Task ID: {detail.task.id}
               <br />
               Текущий статус: {detail.task.status}
@@ -130,8 +130,8 @@ export function McpPlanningPanel({ detail }: McpPlanningPanelProps) {
       <section className="space-y-3">
         <div className="space-y-1">
           <p className="app-label">Готовые кейсы</p>
-          <h3 className="text-lg font-semibold tracking-tight text-slate-950">Промты для копирования</h3>
-          <p className="text-sm leading-6 text-slate-600">
+          <h3 className="text-lg font-semibold tracking-tight text-foreground">Промты для копирования</h3>
+          <p className="text-sm leading-6 text-foreground/70">
             Используйте готовые сценарии для старта: активация проекта, планирование, уточнение, реализация,
             сжатие переписки в план, завершение и обновление `SKILL.md`.
           </p>
@@ -142,8 +142,8 @@ export function McpPlanningPanel({ detail }: McpPlanningPanelProps) {
             <article key={preset.id} className="mcp-prompt-card">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <p className="text-sm font-semibold text-slate-900">{preset.title}</p>
-                  <p className="text-sm leading-6 text-slate-600">{preset.description}</p>
+                  <p className="text-sm font-semibold text-foreground">{preset.title}</p>
+                  <p className="text-sm leading-6 text-foreground/70">{preset.description}</p>
                 </div>
                 <Button
                   type="button"

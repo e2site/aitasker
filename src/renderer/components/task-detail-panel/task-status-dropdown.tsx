@@ -31,16 +31,16 @@ export function TaskStatusDropdown({ disabled, hasOpenQuestions, onUpdate, statu
         <button
           type="button"
           disabled={disabled}
-          className={`inline-flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm transition hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-50 ${current.textClass}`}
+          className={`inline-flex w-full items-center justify-between gap-2 rounded-xl border bg-background px-3 py-2 text-sm font-medium shadow-sm transition hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50 ${current.textClass}`}
         >
           <span className="flex items-center gap-2">
             <span className={`size-2 rounded-full ${current.dotClass}`} />
             {current.label}
           </span>
-          <ChevronDown className="size-3.5 text-slate-400" />
+          <ChevronDown className="size-3.5 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[--radix-dropdown-menu-trigger-width] bg-white p-1.5 shadow-lg">
+      <DropdownMenuContent align="start" className="w-[--radix-dropdown-menu-trigger-width] bg-background p-1.5 shadow-lg">
         {TASK_STATUS_LIST.map((statusItem) => (
           <DropdownMenuItem
             key={statusItem.value}

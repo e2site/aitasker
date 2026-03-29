@@ -22,9 +22,13 @@ import { registerIpcHandlers } from "./ipc/register-ipc-handlers";
 import { McpHttpServer } from "./mcp/mcp-http-server";
 import { getWindowIconPath } from "./assets/app-icon-paths";
 import { createAppTray, setupWindowHideOnClose } from "./tray/app-tray";
-import { Menu } from "electron";
+import { Menu, nativeTheme } from "electron";
 import type { App, BrowserWindow as BrowserWindowType, IpcMain } from "electron";
-import type { DesktopDataChangeEvent } from "../shared/contracts/desktop-api";
+import type {
+  DesktopDataChangeEvent,
+  SetWindowTitleContextInput,
+  WindowTheme
+} from "../shared/contracts/desktop-api";
 
 const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = join(CURRENT_DIR, "..", "..");
@@ -33,6 +37,8 @@ const PRELOAD_SCRIPT = join(APP_ROOT, "preload.js");
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const DATA_CHANGED_CHANNEL = "app:data-changed";
 const FOCUS_TASK_CHANNEL = "app:focus-task";
+const SET_WINDOW_THEME_CHANNEL = "app:set-window-theme";
+const SET_WINDOW_TITLE_CONTEXT_CHANNEL = "app:set-window-title-context";
 
 const NOTIFY_REASONS = new Set<DesktopDataChangeEvent["reason"]>([
   "update-task-status",
@@ -100,6 +106,44 @@ export interface MainProcessRuntime {
 }
 
 let mainWindow: BrowserWindowType | null = null;
+let currentWindowTheme: WindowTheme = "light";
+let currentWindowTitleContext: SetWindowTitleContextInput = {
+  projectName: null,
+  taskTitle: null
+};
+
+function sanitizeTitlePart(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function buildMainWindowTitle(context: SetWindowTitleContextInput): string {
+  const parts = ["AITasker"];
+  const projectName = context.projectName ? sanitizeTitlePart(context.projectName) : "";
+  const taskTitle = context.taskTitle ? sanitizeTitlePart(context.taskTitle) : "";
+
+  if (projectName) {
+    parts.push(projectName);
+  }
+
+  if (taskTitle) {
+    parts.push(taskTitle);
+  }
+
+  return parts.join(" / ");
+}
+
+function applyMainWindowTitle(): void {
+  mainWindow?.setTitle(buildMainWindowTitle(currentWindowTitleContext));
+}
+
+function applyMainWindowTheme(): void {
+  // В Windows нативная плашка заголовка поддерживает принудительную светлую/темную тему через themeSource.
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  nativeTheme.themeSource = currentWindowTheme;
+}
 
 async function createMainWindow(runtime: MainProcessRuntime): Promise<void> {
   const windowIconPath = getWindowIconPath(runtime.app);
@@ -122,6 +166,9 @@ async function createMainWindow(runtime: MainProcessRuntime): Promise<void> {
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
   });
+
+  applyMainWindowTitle();
+  applyMainWindowTheme();
 
   if (VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(VITE_DEV_SERVER_URL);
@@ -210,6 +257,20 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
     });
 
     registerIpcHandlers(runtime.ipcMain, appService);
+    runtime.ipcMain.handle(SET_WINDOW_THEME_CHANNEL, (_event, theme: WindowTheme) => {
+      currentWindowTheme = theme === "dark" ? "dark" : "light";
+      applyMainWindowTheme();
+    });
+    runtime.ipcMain.handle(
+      SET_WINDOW_TITLE_CONTEXT_CHANNEL,
+      (_event, input: SetWindowTitleContextInput) => {
+        currentWindowTitleContext = {
+          projectName: input.projectName,
+          taskTitle: input.taskTitle
+        };
+        applyMainWindowTitle();
+      }
+    );
     await createMainWindow(runtime);
 
     // Tray icon

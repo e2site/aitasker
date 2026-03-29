@@ -47,11 +47,11 @@ export function TaskDetailSidebar({
 
   return (
     <>
-      <aside className="mt-6 flex flex-col gap-4 border-t border-slate-100 pt-6 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+      <aside className="mt-6 flex flex-col gap-4 border-t pt-6 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
         <TaskDetailMetaField label="Проект" value={detail.task.projectName} />
 
         <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Статус</span>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Статус</span>
           <TaskStatusDropdown
             status={detail.task.status}
             disabled={busy}

@@ -25,17 +25,17 @@ export function SettingsDropdown({ isExporting, isImporting, onExportData, onImp
         <button
           type="button"
           title="Настройки приложения"
-          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground/70"
         >
           <Settings className="size-4" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52 bg-white p-1.5 shadow-lg">
+      <DropdownMenuContent align="end" className="w-52 bg-background p-1.5 shadow-lg">
         <DropdownMenuItem
           onClick={onOpenPromptOverrides}
           className="gap-2 rounded-lg px-3 py-2 text-sm"
         >
-          <SlidersHorizontal className="size-4 text-slate-500" />
+          <SlidersHorizontal className="size-4 text-muted-foreground" />
           Настройки промтов
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -43,7 +43,7 @@ export function SettingsDropdown({ isExporting, isImporting, onExportData, onImp
           disabled={isExporting}
           className="gap-2 rounded-lg px-3 py-2 text-sm"
         >
-          <Download className="size-4 text-slate-500" />
+          <Download className="size-4 text-muted-foreground" />
           {isExporting ? "Сохранение..." : "Сохранить все данные"}
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -51,7 +51,7 @@ export function SettingsDropdown({ isExporting, isImporting, onExportData, onImp
           disabled={isImporting}
           className="gap-2 rounded-lg px-3 py-2 text-sm"
         >
-          <Upload className="size-4 text-slate-500" />
+          <Upload className="size-4 text-muted-foreground" />
           {isImporting ? "Загрузка..." : "Загрузить данные"}
         </DropdownMenuItem>
       </DropdownMenuContent>

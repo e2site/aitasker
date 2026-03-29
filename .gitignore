@@ -12,3 +12,4 @@ release/
 *.sqlite-shm
 *.sqlite-wal
 
+dist-electron/*

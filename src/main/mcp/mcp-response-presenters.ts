@@ -5,7 +5,11 @@
 import type { AppService } from "../services/app-service";
 import type { AgentSession } from "./agent-session";
 import type { TaskContextSnapshot } from "../services/task-context";
-import type { PlanCommentRecord, PlanQuestionRecord } from "../../shared/contracts/desktop-api";
+import type {
+  PlanCommentRecord,
+  PlanQuestionRecord,
+  TaskContextRecord
+} from "../../shared/contracts/desktop-api";
 
 export type { AgentSession };
 
@@ -103,10 +107,20 @@ function serializePlanQuestion(question: PlanQuestionRecord) {
 function serializePlanBlock(
   plan: TaskDetail["plan"],
   comments: PlanCommentRecord[],
-  questions: PlanQuestionRecord[]
+  questions: PlanQuestionRecord[],
+  taskContext: TaskContextRecord
 ) {
   if (!plan) {
-    return { exists: false, contentMd: "", comments: [], questions: [] };
+    return {
+      exists: false,
+      contentMd: "",
+      comments: [],
+      questions: [],
+      goal: taskContext.goal,
+      criticalConditions: taskContext.criticalConditions,
+      forbiddenInterpretations: taskContext.forbiddenInterpretations,
+      acceptanceCriteria: taskContext.acceptanceCriteria
+    };
   }
 
   return {
@@ -115,13 +129,25 @@ function serializePlanBlock(
     source: plan.source,
     updatedAt: plan.updatedAt,
     comments: comments.map(serializePlanComment),
-    questions: questions.map(serializePlanQuestion)
+    questions: questions.map(serializePlanQuestion),
+    goal: taskContext.goal,
+    criticalConditions: taskContext.criticalConditions,
+    forbiddenInterpretations: taskContext.forbiddenInterpretations,
+    acceptanceCriteria: taskContext.acceptanceCriteria
   };
 }
 
-export function serializePlan(plan: TaskDetail["plan"], taskId: string) {
+export function serializePlan(plan: TaskDetail["plan"], taskId: string, taskContext: TaskContextRecord) {
   if (!plan) {
-    return { contentMd: "", exists: false, taskId };
+    return {
+      contentMd: "",
+      exists: false,
+      taskId,
+      goal: taskContext.goal,
+      criticalConditions: taskContext.criticalConditions,
+      forbiddenInterpretations: taskContext.forbiddenInterpretations,
+      acceptanceCriteria: taskContext.acceptanceCriteria
+    };
   }
 
   return {
@@ -129,7 +155,11 @@ export function serializePlan(plan: TaskDetail["plan"], taskId: string) {
     exists: true,
     source: plan.source,
     taskId,
-    updatedAt: plan.updatedAt
+    updatedAt: plan.updatedAt,
+    goal: taskContext.goal,
+    criticalConditions: taskContext.criticalConditions,
+    forbiddenInterpretations: taskContext.forbiddenInterpretations,
+    acceptanceCriteria: taskContext.acceptanceCriteria
   };
 }
 
@@ -137,7 +167,7 @@ export function serializeTaskDetail(detail: TaskDetail) {
   return {
     linkedResources: detail.linkedResources.map(serializeLinkedResource),
     linkedTasks: detail.linkedTasks.map(serializeLinkedTask),
-    plan: serializePlanBlock(detail.plan, detail.planComments, detail.planQuestions),
+    plan: serializePlanBlock(detail.plan, detail.planComments, detail.planQuestions, detail.taskContext),
     project: serializeProjectSummary(detail.project),
     task: serializeTask(detail.task)
   };
@@ -168,7 +198,12 @@ export function serializeTaskSnapshot(snapshot: TaskContextSnapshot) {
   return {
     task: serializeTask(snapshot.task),
     project: serializeProjectSummary(snapshot.project),
-    plan: serializePlanBlock(snapshot.plan, snapshot.planComments, snapshot.planQuestions),
+    plan: serializePlanBlock(
+      snapshot.plan,
+      snapshot.planComments,
+      snapshot.planQuestions,
+      snapshot.taskContext
+    ),
     linkedResources: snapshot.linkedResources.map(serializeLinkedResource),
     linkedTasks: snapshot.linkedTasks.map(serializeLinkedTask)
   };
@@ -189,7 +224,14 @@ export function serializeDeltaSnapshot(snapshot: TaskContextSnapshot, since: num
     planUpdated || newComments.length > 0 || newQuestions.length > 0
       ? {
           ...(planUpdated && snapshot.plan
-            ? { contentMd: snapshot.plan.contentMd, updatedAt: snapshot.plan.updatedAt }
+            ? {
+                contentMd: snapshot.plan.contentMd,
+                updatedAt: snapshot.plan.updatedAt,
+                goal: snapshot.taskContext.goal,
+                criticalConditions: snapshot.taskContext.criticalConditions,
+                forbiddenInterpretations: snapshot.taskContext.forbiddenInterpretations,
+                acceptanceCriteria: snapshot.taskContext.acceptanceCriteria
+              }
             : UNCHANGED),
           comments: newComments.length > 0 ? newComments.map(serializePlanComment) : UNCHANGED,
           questions: newQuestions.length > 0 ? newQuestions.map(serializePlanQuestion) : UNCHANGED

@@ -1,5 +1,5 @@
 /*
-Назначение: Дает renderer и MCP единый сервисный API для работы с проектами, задачами, планами, расширениями и доработками.
+Назначение: Дает renderer и MCP единый сервисный API для работы с проектами, задачами, планами, task context, расширениями и доработками.
 Не входит: Детали IPC-транспорта, управление Electron-окнами и низкоуровневый bootstrap SQLite.
 */
 import type {
@@ -24,6 +24,7 @@ import type {
   ResourceRecord,
   RestorePlanRevisionInput,
   SavePlanInput,
+  TaskContextRecord,
   TaskDetail,
   TaskRecord,
   TaskStatus,
@@ -69,6 +70,7 @@ import type { PlanRepository } from "../db/plan-repository";
 import type { PromptOverrideRepository } from "../db/prompt-override-repository";
 import type { ProjectRepository } from "../db/project-repository";
 import type { ResourceRepository } from "../db/resource-repository";
+import type { TaskContextRepository } from "../db/task-context-repository";
 import type { TaskLinkRepository } from "../db/task-link-repository";
 import type { TaskResourceRepository } from "../db/task-resource-repository";
 import type { TaskRepository } from "../db/task-repository";
@@ -91,6 +93,7 @@ export interface AppServiceDependencies {
   taskLinkRepository: TaskLinkRepository;
   taskRepository: TaskRepository;
   taskResourceRepository: TaskResourceRepository;
+  taskContextRepository: TaskContextRepository;
 }
 
 export interface AppService {
@@ -133,6 +136,24 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
     dependencies.onDataChanged?.(event);
   };
 
+  const hasTaskContextPatch = (input: SavePlanInput): boolean => {
+    return (
+      input.goal !== undefined ||
+      input.criticalConditions !== undefined ||
+      input.forbiddenInterpretations !== undefined ||
+      input.acceptanceCriteria !== undefined
+    );
+  };
+
+  const mergeTaskContext = (current: TaskContextRecord, input: SavePlanInput): TaskContextRecord => {
+    return {
+      goal: input.goal ?? current.goal,
+      criticalConditions: input.criticalConditions ?? current.criticalConditions,
+      forbiddenInterpretations: input.forbiddenInterpretations ?? current.forbiddenInterpretations,
+      acceptanceCriteria: input.acceptanceCriteria ?? current.acceptanceCriteria
+    };
+  };
+
   const getTaskDetail = async (taskId: string, projectId?: string): Promise<TaskDetail> => {
     const task = await dependencies.taskRepository.getById(taskId, projectId);
 
@@ -146,15 +167,17 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
       throw new Error(`Project ${task.projectId} was not found.`);
     }
 
-    const [plan, planRevisions, planComments, planQuestions, agentSession, linkedTasks, linkedResources] = await Promise.all([
-      dependencies.planRepository.getByTaskId(taskId),
-      dependencies.planRepository.listRevisions(taskId),
-      dependencies.planCommentRepository.listCommentsByTaskId(taskId),
-      dependencies.planCommentRepository.listQuestionsByTaskId(taskId),
-      dependencies.agentSessionRepository.getByTaskId(taskId),
-      dependencies.taskLinkRepository.listByTaskId(taskId),
-      dependencies.taskResourceRepository.listByTaskId(taskId)
-    ]);
+    const [plan, planRevisions, planComments, planQuestions, taskContext, agentSession, linkedTasks, linkedResources] =
+      await Promise.all([
+        dependencies.planRepository.getByTaskId(taskId),
+        dependencies.planRepository.listRevisions(taskId),
+        dependencies.planCommentRepository.listCommentsByTaskId(taskId),
+        dependencies.planCommentRepository.listQuestionsByTaskId(taskId),
+        dependencies.taskContextRepository.getByTaskId(taskId),
+        dependencies.agentSessionRepository.getByTaskId(taskId),
+        dependencies.taskLinkRepository.listByTaskId(taskId),
+        dependencies.taskResourceRepository.listByTaskId(taskId)
+      ]);
 
     return {
       project,
@@ -163,6 +186,7 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
       planRevisions,
       planComments,
       planQuestions,
+      taskContext,
       agentSession,
       linkedTasks,
       linkedResources
@@ -466,6 +490,11 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
             content
           });
         }
+      }
+
+      if (hasTaskContextPatch(parsedInput)) {
+        const nextTaskContext = mergeTaskContext(detail.taskContext, parsedInput);
+        await dependencies.taskContextRepository.replaceByTaskId(parsedInput.taskId, nextTaskContext);
       }
 
       await dependencies.projectRepository.touch(detail.task.projectId);

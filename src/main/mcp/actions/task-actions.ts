@@ -103,15 +103,30 @@ export function registerTaskActions(server: McpServer, context: McpControllerCon
     "sync_task",
     {
       description:
-        "Синхронизировать задачу с сессией. Первый вызов возвращает полный снапшот и переводит сессию в work-режим. Повторные вызовы в рамках той же сессии возвращают только изменения с момента первого вызова (delta-режим). Требует активного подготовленного проекта.",
+        "Синхронизировать задачу с сессией. Первый вызов возвращает полный снапшот и переводит сессию в work-режим. Повторные вызовы в рамках той же сессии возвращают только изменения с момента первого вызова (delta-режим). Если проект задачи не активирован, активируется автоматически.",
       inputSchema: {
         taskId: z.string()
       }
     },
     async ({ taskId }) => {
+      const activeProjectId = context.getActiveProjectId();
+      const detail = await context.getAppService().getTaskDetail(taskId);
+      const taskProjectId = detail.task.projectId;
+
+      if (activeProjectId !== taskProjectId) {
+        context.setActiveProjectId(taskProjectId);
+        context.resetSession();
+        context.getLogger().info("mcp", "Tool sync_task auto-activated project", {
+          taskId,
+          previousProjectId: activeProjectId,
+          projectId: taskProjectId
+        });
+      }
+
       const session = context.getAgentSession();
       context.getLogger().debug("mcp", "Tool sync_task called", {
         taskId,
+        projectId: taskProjectId,
         mode: session.lastMode,
         sessionTaskId: session.taskId
       });

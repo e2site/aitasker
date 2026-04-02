@@ -1,5 +1,5 @@
 /*
-Назначение: Facade над единой сущностью "задача" — предоставляет единую точку доступа к task, plan, planComments, planQuestions, linkedResources и linkedTasks, скрывая внутренние сущности AppService.
+Назначение: Facade над единой сущностью "задача" — предоставляет единую точку доступа к task, plan, task context, planComments, planQuestions, linkedResources и linkedTasks, скрывая внутренние сущности AppService.
 Не входит: Регистрация MCP-инструментов, HTTP-транспорт, сериализация MCP-ответов.
 */
 import type {
@@ -10,6 +10,7 @@ import type {
   PlanRecord,
   PlanRevisionRecord,
   ResourceRecord,
+  TaskContextRecord,
   TaskDetail,
   TaskRecord,
   TaskStatus
@@ -42,6 +43,71 @@ export class TaskContext {
     this._detail = null;
   }
 
+  private normalizeTaskContextList(items: string[] | undefined): string[] | undefined {
+    if (items === undefined) {
+      return undefined;
+    }
+
+    const normalized: string[] = [];
+    const seen = new Set<string>();
+
+    for (const item of items) {
+      const value = item.trim();
+
+      if (value.length === 0 || seen.has(value)) {
+        continue;
+      }
+
+      seen.add(value);
+      normalized.push(value);
+    }
+
+    return normalized;
+  }
+
+  private normalizeTaskContextInput(input?: TaskContextSaveInput): TaskContextSaveInput | undefined {
+    if (!input) {
+      return undefined;
+    }
+
+    const goal = this.normalizeTaskContextList(input.goal);
+    const criticalConditions = this.normalizeTaskContextList(input.criticalConditions);
+    const forbiddenInterpretations = this.normalizeTaskContextList(input.forbiddenInterpretations);
+    const acceptanceCriteria = this.normalizeTaskContextList(input.acceptanceCriteria);
+
+    if (
+      goal === undefined &&
+      criticalConditions === undefined &&
+      forbiddenInterpretations === undefined &&
+      acceptanceCriteria === undefined
+    ) {
+      return undefined;
+    }
+
+    return {
+      goal,
+      criticalConditions,
+      forbiddenInterpretations,
+      acceptanceCriteria
+    };
+  }
+
+  private mergeTaskContext(
+    current: TaskContextRecord,
+    input: TaskContextSaveInput | undefined
+  ): TaskContextRecord | undefined {
+    if (!input) {
+      return undefined;
+    }
+
+    return {
+      goal: input.goal ?? current.goal,
+      criticalConditions: input.criticalConditions ?? current.criticalConditions,
+      forbiddenInterpretations: input.forbiddenInterpretations ?? current.forbiddenInterpretations,
+      acceptanceCriteria: input.acceptanceCriteria ?? current.acceptanceCriteria
+    };
+  }
+
   // ─── Task ────────────────────────────────────────────────────────────────────
 
   async getTask(): Promise<TaskRecord> {
@@ -62,9 +128,23 @@ export class TaskContext {
   async savePlan(
     contentMd: string,
     openQuestions?: string[],
-    source: "human" | "agent" = "agent"
+    source: "human" | "agent" = "agent",
+    taskContext?: TaskContextSaveInput
   ): Promise<void> {
-    await this.appService.savePlan({ taskId: this.taskId, contentMd, openQuestions, source });
+    const detail = await this.detail();
+    const normalizedTaskContext = this.normalizeTaskContextInput(taskContext);
+    const mergedTaskContext = this.mergeTaskContext(detail.taskContext, normalizedTaskContext);
+
+    await this.appService.savePlan({
+      taskId: this.taskId,
+      contentMd,
+      openQuestions,
+      source,
+      goal: mergedTaskContext?.goal,
+      criticalConditions: mergedTaskContext?.criticalConditions,
+      forbiddenInterpretations: mergedTaskContext?.forbiddenInterpretations,
+      acceptanceCriteria: mergedTaskContext?.acceptanceCriteria
+    });
     this.invalidate();
   }
 
@@ -111,6 +191,10 @@ export class TaskContext {
 
   async getPlanQuestions(): Promise<PlanQuestionRecord[]> {
     return (await this.detail()).planQuestions;
+  }
+
+  async getTaskContext(): Promise<TaskContextRecord> {
+    return (await this.detail()).taskContext;
   }
 
   async getQuestion(questionId: string): Promise<PlanQuestionRecord> {
@@ -169,6 +253,7 @@ export class TaskContext {
       plan: detail.plan,
       planComments: detail.planComments,
       planQuestions: detail.planQuestions,
+      taskContext: detail.taskContext,
       linkedResources: detail.linkedResources,
       linkedTasks: detail.linkedTasks,
       project: detail.project
@@ -181,9 +266,17 @@ export interface TaskContextSnapshot {
   plan: TaskDetail["plan"];
   planComments: TaskDetail["planComments"];
   planQuestions: TaskDetail["planQuestions"];
+  taskContext: TaskDetail["taskContext"];
   linkedResources: TaskDetail["linkedResources"];
   linkedTasks: TaskDetail["linkedTasks"];
   project: TaskDetail["project"];
+}
+
+export interface TaskContextSaveInput {
+  goal?: string[];
+  criticalConditions?: string[];
+  forbiddenInterpretations?: string[];
+  acceptanceCriteria?: string[];
 }
 
 export function createTaskContext(taskId: string, appService: AppService): TaskContext {

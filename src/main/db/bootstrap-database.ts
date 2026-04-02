@@ -1,5 +1,5 @@
 /*
-Назначение: Создает и мягко обновляет SQLite-таблицы приложения при запуске, включая миграции задач, проектов и ревизий планов.
+Назначение: Создает и мягко обновляет SQLite-таблицы приложения при запуске, включая миграции задач, проектов, task context и ревизий планов.
 Не входит: Генерация Drizzle-миграций и бизнес-логика доступа к данным.
 */
 import type Database from "better-sqlite3";
@@ -133,6 +133,38 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
       FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS task_goals (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      value TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS task_critical_conditions (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      value TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS task_forbidden_interpretations (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      value TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS task_acceptance_criteria (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      value TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
 
   if (!hasColumn(sqlite, "tasks", "project_id")) {
@@ -240,5 +272,9 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_plan_comments_plan_id ON plan_comments(plan_id);
     CREATE INDEX IF NOT EXISTS idx_plan_questions_task_id ON plan_questions(task_id);
     CREATE INDEX IF NOT EXISTS idx_plan_questions_plan_id ON plan_questions(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_task_goals_task_id ON task_goals(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_critical_conditions_task_id ON task_critical_conditions(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_forbidden_interpretations_task_id ON task_forbidden_interpretations(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_acceptance_criteria_task_id ON task_acceptance_criteria(task_id);
   `);
 }

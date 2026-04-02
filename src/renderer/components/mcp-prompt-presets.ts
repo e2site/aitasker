@@ -161,42 +161,57 @@ export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
     `Активируй проект "{{projectName}}" (ID: {{projectId}}) через activate_project.
 Проверь карточку проекта через get_active_project. Если поля не заполнены — заполни через update_project_profile.`,
 
-  "agent-task-prompt":
-    `Создай задачу в проекте {{projectName}} (ID: {{projectId}}) через MCP aitasker.
+"agent-task-prompt":
+  `Создай задачу в проекте {{projectName}} (ID: {{projectId}}) через MCP aitasker.
 Вызови activate_project, затем create_task с title и description.
-После создания сохрани план через save_plan и переведи статус в planning.
+После создания сохрани план через save_plan, обязательно передав:
+- contentMd
+- goal
+- criticalConditions
+- forbiddenInterpretations
+- acceptanceCriteria
+Переведи статус в planning.
 
 Задача:`,
 
-  "plan-task":
-    `Выполни планирование задачи "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}}.
-
-Шаги:
-1. Вызови sync_task с taskId {{taskId}} — получишь полный снапшот и сессия перейдёт в work-режим.
-2. Прочитай linkedResources через get_resource если они влияют на задачу.
-3. Если есть открытые вопросы (plan.questions) — ответь через answer_plan_question или оставь в openQuestions.
-4. Составь план и сохрани через save_plan.
-5. Переведи статус в planning, затем implementation через update_task_status.`,
-
-  "clarify-plan":
-    `Уточни план задачи "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}}.
-
-Шаги:
-1. Вызови sync_task с taskId {{taskId}} для получения актуального состояния.
-2. Прочитай plan.comments и plan.questions.
-3. Прочитай linkedResources через get_resource если нужны.
-4. Ответь на открытые вопросы через answer_plan_question или оставь нерешённые в openQuestions.
-5. Дополни план недостающими шагами и сохрани через save_plan.`,
-
-  "implementation":
-    `Реализуй задачу "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}} по шагам плана.
+ "plan-task":
+  `Выполни планирование задачи "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}}.
 
 Шаги:
 1. Вызови sync_task с taskId {{taskId}}.
-2. Прочитай plan.comments и linkedResources через get_resource.
-3. Реализуй задачу по шагам плана.
+2. Прочитай linkedResources через get_resource, если они влияют на задачу.
+3. Если есть открытые вопросы (plan.questions) — ответь через answer_plan_question или оставь в openQuestions.
+4. Составь план и обязательно заполни: goal, criticalConditions, forbiddenInterpretations, acceptanceCriteria.
+5. Сохрани всё через save_plan.
+6. Переведи статус в planning, затем implementation через update_task_status.`,
+
+ "clarify-plan":
+  `Уточни план задачи "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}}.
+
+Шаги:
+1. Вызови sync_task с taskId {{taskId}}.
+2. Прочитай plan.comments и plan.questions.
+3. Прочитай linkedResources через get_resource, если нужны.
+4. Ответь на открытые вопросы через answer_plan_question или оставь их в openQuestions.
+5. Обнови и сохрани план через save_plan:
+   - contentMd
+   - goal
+   - criticalConditions
+   - forbiddenInterpretations
+   - acceptanceCriteria
+   - openQuestions
+6. Убедись, что criticalConditions не потеряны.`,
+
+  "implementation":
+  `Реализуй задачу "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}} по шагам плана.
+
+Шаги:
+1. Вызови sync_task с taskId {{taskId}}.
+2. Прочитай plan.comments, criticalConditions и linkedResources через get_resource.
+3. Реализуй задачу по шагам плана с учётом criticalConditions.
 4. Контекстные заметки добавляй через append_plan_extension.
 5. Решения и проблемы фиксируй через append_plan_improvement.
+6. Проверь все ли goal выполнены, не нарушены forbiddenInterpretations и соответствует acceptanceCriteria
 6. После завершения переведи статус в testing через update_task_status.`,
 
   "finish-task":
@@ -209,14 +224,21 @@ export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
 4. Переведи статус в completed через update_task_status.`,
 
   "consolidate-discussion":
-    `Сожми обсуждение задачи "{{taskTitle}}" (ID: {{taskId}}) в обновлённый план.
+  `Сожми обсуждение задачи "{{taskTitle}}" (ID: {{taskId}}) в обновлённый план.
 
 Шаги:
 1. Вызови sync_task с taskId {{taskId}}.
 2. Прочитай все plan.comments и plan.questions.
 3. Ответь на решённые вопросы через answer_plan_question.
-4. Собери новый план из базового + комментарии.
-5. Сохрани через consolidate_plan_discussion, нерешённые вопросы передай в openQuestions.`,
+4. Собери новый план из базового плана и комментариев.
+5. Сохрани через consolidate_plan_discussion:
+   - contentMd
+   - goal
+   - criticalConditions
+   - forbiddenInterpretations
+   - acceptanceCriteria
+   - openQuestions
+6. Убедись, что criticalConditions не потеряны.`,
 
   "reload-context":
     `Перезагрузи контекст задачи "{{taskTitle}}" (ID: {{taskId}}) — контекст мог сжаться.

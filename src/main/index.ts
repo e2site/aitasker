@@ -14,6 +14,7 @@ import { PromptOverrideRepository } from "./db/prompt-override-repository";
 import { ResourceRepository } from "./db/resource-repository";
 import { TaskLinkRepository } from "./db/task-link-repository";
 import { TaskRepository } from "./db/task-repository";
+import { TaskContextRepository } from "./db/task-context-repository";
 import { TaskResourceRepository } from "./db/task-resource-repository";
 import { createAppService } from "./services/app-service";
 import type { AppService } from "./services/app-service";
@@ -198,6 +199,7 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
     const agentSessionRepository = new AgentSessionRepository(databaseContext.database);
     const resourceRepository = new ResourceRepository(databaseContext.database);
     const taskResourceRepository = new TaskResourceRepository(databaseContext.database);
+    const taskContextRepository = new TaskContextRepository(databaseContext.database);
     const agentRegistry = createAgentRegistry();
     let appService!: AppService;
     let mcpHttpServer: McpHttpServer | null = null;
@@ -246,7 +248,8 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
       sqlite: databaseContext.sqlite,
       taskLinkRepository,
       taskRepository,
-      taskResourceRepository
+      taskResourceRepository,
+      taskContextRepository
     });
     mcpHttpServer = new McpHttpServer(appService, logger);
 

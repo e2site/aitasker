@@ -1,5 +1,5 @@
 /*
-Назначение: Описывает общие доменные модели, схемы валидации и preload-контракт десктопного приложения, включая операции с задачами, планом, обсуждением и статусами.
+Назначение: Описывает общие доменные модели, схемы валидации и preload-контракт десктопного приложения, включая операции с задачами, планом, task context, обсуждением и статусами.
 Не входит: Реализация репозиториев, детали renderer-компонентов и интеграция с внешними SDK.
 */
 import { z } from "zod";
@@ -121,6 +121,17 @@ export const planQuestionRecordSchema = z.object({
 });
 export type PlanQuestionRecord = z.infer<typeof planQuestionRecordSchema>;
 
+export const taskContextItemSchema = z.string().trim().min(1).max(4_000);
+export const taskContextListSchema = z.array(taskContextItemSchema).max(200);
+
+export const taskContextRecordSchema = z.object({
+  goal: taskContextListSchema,
+  criticalConditions: taskContextListSchema,
+  forbiddenInterpretations: taskContextListSchema,
+  acceptanceCriteria: taskContextListSchema
+});
+export type TaskContextRecord = z.infer<typeof taskContextRecordSchema>;
+
 export const linkedResourceRecordSchema = z.object({
   id: z.string(),
   resourceId: z.string(),
@@ -150,6 +161,7 @@ export const taskDetailSchema = z.object({
   planRevisions: z.array(planRevisionRecordSchema),
   planComments: z.array(planCommentRecordSchema),
   planQuestions: z.array(planQuestionRecordSchema),
+  taskContext: taskContextRecordSchema,
   agentSession: agentSessionRecordSchema.nullable(),
   linkedTasks: z.array(linkedTaskRecordSchema),
   linkedResources: z.array(linkedResourceRecordSchema)
@@ -230,6 +242,10 @@ export const savePlanInputSchema = z.object({
   taskId: z.string(),
   contentMd: z.string().trim().min(1, "План не может быть пустым."),
   openQuestions: z.array(z.string().trim().min(1).max(4_000)).max(50).optional(),
+  goal: taskContextListSchema.optional(),
+  criticalConditions: taskContextListSchema.optional(),
+  forbiddenInterpretations: taskContextListSchema.optional(),
+  acceptanceCriteria: taskContextListSchema.optional(),
   source: planSourceSchema.default("human")
 });
 export type SavePlanInput = z.infer<typeof savePlanInputSchema>;

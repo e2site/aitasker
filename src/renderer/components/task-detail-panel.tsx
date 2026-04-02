@@ -1,5 +1,5 @@
 /*
-Назначение: Показывает выбранную задачу в Jira-like layout, включая статус, план, быстрые MCP-действия и ограничения интерфейса при незакрытых вопросах.
+Назначение: Показывает выбранную задачу в Jira-like layout, включая статус, план, контракт задачи, быстрые MCP-действия и ограничения интерфейса при незакрытых вопросах.
 Не входит: Отрисовка списка задач и форма создания задач.
 */
 import { useEffect, useState } from "react";
@@ -8,8 +8,9 @@ import { McpPlanningPanel } from "@/renderer/components/mcp-planning-panel";
 import { SearchBar } from "@/renderer/components/search-bar";
 import { TaskPlanWorkspace } from "@/renderer/components/task-plan-workspace";
 import { useTextSearch } from "@/renderer/features/tasks/use-text-search";
-import type { TaskDetail, TaskStatus } from "@/shared/contracts/desktop-api";
+import type { TaskContextRecord, TaskDetail, TaskStatus } from "@/shared/contracts/desktop-api";
 import { TaskDetailEditableSummary } from "./task-detail-panel/task-detail-editable-summary";
+import { TaskContractTab } from "./task-detail-panel/task-contract-tab";
 import {
   getOpenQuestionsCount,
   isTaskDetailBusy
@@ -19,10 +20,11 @@ import { TaskSessionTab } from "./task-detail-panel/task-session-tab";
 import { TaskDetailSidebar } from "./task-detail-panel/task-detail-sidebar";
 import { TaskStatusDropdown } from "./task-detail-panel/task-status-dropdown";
 
-type Tab = "plan" | "mcp" | "session";
+type Tab = "plan" | "contract" | "mcp" | "session";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "plan", label: "План" },
+  { id: "contract", label: "Контракт задачи" },
   { id: "mcp", label: "MCP workflow" },
   { id: "session", label: "Сессия" }
 ];
@@ -50,6 +52,7 @@ export interface TaskDetailPanelProps {
   onLinkTask(targetTaskId: string, comment: string): void;
   onRestorePlanRevision(taskId: string, revisionId: string): void;
   onSavePlan(taskId: string, contentMd: string): void;
+  onSaveTaskContract(taskId: string, taskContext: TaskContextRecord): void;
   onSetEditorMode(mode: "view" | "edit"): void;
   onUnlinkResource(linkId: string): void;
   onUnlinkTask(linkId: string): void;
@@ -235,6 +238,16 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
           ) : null}
 
           {activeTab === "mcp" ? <McpPlanningPanel detail={detail} /> : null}
+
+          {activeTab === "contract" ? (
+            <TaskContractTab
+              detail={detail}
+              isDeletingTask={props.isDeletingTask}
+              isRestoringRevision={props.isRestoringRevision}
+              isSavingPlan={props.isSavingPlan}
+              onSaveTaskContract={props.onSaveTaskContract}
+            />
+          ) : null}
 
           {activeTab === "session" ? <TaskSessionTab detail={detail} /> : null}
         </div>

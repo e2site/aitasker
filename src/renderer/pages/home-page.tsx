@@ -302,6 +302,23 @@ export function HomePage() {
                     { onSuccess() { setEditorMode("view"); } }
                   );
                 }}
+                onSaveTaskContract={(taskId, taskContext) => {
+                  const detail = taskDetailQuery.data;
+
+                  if (!detail || detail.task.id !== taskId || !detail.plan) {
+                    return;
+                  }
+
+                  savePlanMutation.mutate({
+                    taskId,
+                    contentMd: detail.plan.contentMd,
+                    source: "human",
+                    goal: taskContext.goal,
+                    criticalConditions: taskContext.criticalConditions,
+                    forbiddenInterpretations: taskContext.forbiddenInterpretations,
+                    acceptanceCriteria: taskContext.acceptanceCriteria
+                  });
+                }}
                 onSetEditorMode={setEditorMode}
                 onLinkResource={(resourceId, comment) => {
                   if (!selectedTaskId) return;

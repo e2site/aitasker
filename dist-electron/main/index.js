@@ -111,6 +111,34 @@ var planQuestionsTable = sqliteTable("plan_questions", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
 });
+var taskGoalsTable = sqliteTable("task_goals", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull().references(() => tasksTable.id, { onDelete: "cascade" }),
+  value: text("value").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+var taskCriticalConditionsTable = sqliteTable("task_critical_conditions", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull().references(() => tasksTable.id, { onDelete: "cascade" }),
+  value: text("value").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+var taskForbiddenInterpretationsTable = sqliteTable("task_forbidden_interpretations", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull().references(() => tasksTable.id, { onDelete: "cascade" }),
+  value: text("value").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+var taskAcceptanceCriteriaTable = sqliteTable("task_acceptance_criteria", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull().references(() => tasksTable.id, { onDelete: "cascade" }),
+  value: text("value").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
 var databaseSchema = {
   agentSessionsTable,
   planCommentsTable,
@@ -120,6 +148,10 @@ var databaseSchema = {
   projectsTable,
   promptOverridesTable,
   resourcesTable,
+  taskAcceptanceCriteriaTable,
+  taskCriticalConditionsTable,
+  taskForbiddenInterpretationsTable,
+  taskGoalsTable,
   taskLinksTable,
   taskResourcesTable,
   tasksTable
@@ -310,6 +342,38 @@ function bootstrapDatabase(sqlite) {
       FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS task_goals (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      value TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS task_critical_conditions (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      value TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS task_forbidden_interpretations (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      value TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS task_acceptance_criteria (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      value TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
   if (!hasColumn(sqlite, "tasks", "project_id")) {
     sqlite.exec(`ALTER TABLE tasks ADD COLUMN project_id TEXT;`);
@@ -398,6 +462,10 @@ function bootstrapDatabase(sqlite) {
     CREATE INDEX IF NOT EXISTS idx_plan_comments_plan_id ON plan_comments(plan_id);
     CREATE INDEX IF NOT EXISTS idx_plan_questions_task_id ON plan_questions(task_id);
     CREATE INDEX IF NOT EXISTS idx_plan_questions_plan_id ON plan_questions(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_task_goals_task_id ON task_goals(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_critical_conditions_task_id ON task_critical_conditions(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_forbidden_interpretations_task_id ON task_forbidden_interpretations(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_acceptance_criteria_task_id ON task_acceptance_criteria(task_id);
   `);
 }
 
@@ -998,15 +1066,67 @@ var TaskRepository = class {
   }
 };
 
-// src/main/db/task-resource-repository.ts
+// src/main/db/task-context-repository.ts
 import { randomUUID as randomUUID8 } from "crypto";
-import { eq as eq9 } from "drizzle-orm";
+import { asc, eq as eq9 } from "drizzle-orm";
+function createEmptyTaskContext() {
+  return {
+    goal: [],
+    criticalConditions: [],
+    forbiddenInterpretations: [],
+    acceptanceCriteria: []
+  };
+}
+var TaskContextRepository = class {
+  constructor(database) {
+    this.database = database;
+  }
+  async getByTaskId(taskId) {
+    const [goalRows, criticalRows, forbiddenRows, acceptanceRows] = await Promise.all([
+      this.database.select().from(taskGoalsTable).where(eq9(taskGoalsTable.taskId, taskId)).orderBy(asc(taskGoalsTable.createdAt)).all(),
+      this.database.select().from(taskCriticalConditionsTable).where(eq9(taskCriticalConditionsTable.taskId, taskId)).orderBy(asc(taskCriticalConditionsTable.createdAt)).all(),
+      this.database.select().from(taskForbiddenInterpretationsTable).where(eq9(taskForbiddenInterpretationsTable.taskId, taskId)).orderBy(asc(taskForbiddenInterpretationsTable.createdAt)).all(),
+      this.database.select().from(taskAcceptanceCriteriaTable).where(eq9(taskAcceptanceCriteriaTable.taskId, taskId)).orderBy(asc(taskAcceptanceCriteriaTable.createdAt)).all()
+    ]);
+    const result = createEmptyTaskContext();
+    result.goal = goalRows.map((row) => row.value);
+    result.criticalConditions = criticalRows.map((row) => row.value);
+    result.forbiddenInterpretations = forbiddenRows.map((row) => row.value);
+    result.acceptanceCriteria = acceptanceRows.map((row) => row.value);
+    return result;
+  }
+  async replaceByTaskId(taskId, input) {
+    const now = /* @__PURE__ */ new Date();
+    this.database.transaction((tx) => {
+      tx.delete(taskGoalsTable).where(eq9(taskGoalsTable.taskId, taskId)).run();
+      tx.delete(taskCriticalConditionsTable).where(eq9(taskCriticalConditionsTable.taskId, taskId)).run();
+      tx.delete(taskForbiddenInterpretationsTable).where(eq9(taskForbiddenInterpretationsTable.taskId, taskId)).run();
+      tx.delete(taskAcceptanceCriteriaTable).where(eq9(taskAcceptanceCriteriaTable.taskId, taskId)).run();
+      for (const value of input.goal) {
+        tx.insert(taskGoalsTable).values({ id: randomUUID8(), taskId, value, createdAt: now, updatedAt: now }).run();
+      }
+      for (const value of input.criticalConditions) {
+        tx.insert(taskCriticalConditionsTable).values({ id: randomUUID8(), taskId, value, createdAt: now, updatedAt: now }).run();
+      }
+      for (const value of input.forbiddenInterpretations) {
+        tx.insert(taskForbiddenInterpretationsTable).values({ id: randomUUID8(), taskId, value, createdAt: now, updatedAt: now }).run();
+      }
+      for (const value of input.acceptanceCriteria) {
+        tx.insert(taskAcceptanceCriteriaTable).values({ id: randomUUID8(), taskId, value, createdAt: now, updatedAt: now }).run();
+      }
+    });
+  }
+};
+
+// src/main/db/task-resource-repository.ts
+import { randomUUID as randomUUID9 } from "crypto";
+import { eq as eq10 } from "drizzle-orm";
 var TaskResourceRepository = class {
   constructor(database) {
     this.database = database;
   }
   async link(input) {
-    const id = randomUUID8();
+    const id = randomUUID9();
     const now = /* @__PURE__ */ new Date();
     this.database.insert(taskResourcesTable).values({
       id,
@@ -1022,7 +1142,7 @@ var TaskResourceRepository = class {
       createdAt: taskResourcesTable.createdAt,
       name: resourcesTable.name,
       contentMd: resourcesTable.contentMd
-    }).from(taskResourcesTable).innerJoin(resourcesTable, eq9(taskResourcesTable.resourceId, resourcesTable.id)).where(eq9(taskResourcesTable.id, id)).get();
+    }).from(taskResourcesTable).innerJoin(resourcesTable, eq10(taskResourcesTable.resourceId, resourcesTable.id)).where(eq10(taskResourcesTable.id, id)).get();
     if (!row) {
       throw new Error(`TaskResource ${id} not found after create.`);
     }
@@ -1043,7 +1163,7 @@ var TaskResourceRepository = class {
       createdAt: taskResourcesTable.createdAt,
       name: resourcesTable.name,
       contentMd: resourcesTable.contentMd
-    }).from(taskResourcesTable).innerJoin(resourcesTable, eq9(taskResourcesTable.resourceId, resourcesTable.id)).where(eq9(taskResourcesTable.taskId, taskId)).all();
+    }).from(taskResourcesTable).innerJoin(resourcesTable, eq10(taskResourcesTable.resourceId, resourcesTable.id)).where(eq10(taskResourcesTable.taskId, taskId)).all();
     return rows.map((row) => ({
       id: row.linkId,
       resourceId: row.resourceId,
@@ -1054,7 +1174,7 @@ var TaskResourceRepository = class {
     }));
   }
   async unlink(linkId) {
-    const result = this.database.delete(taskResourcesTable).where(eq9(taskResourcesTable.id, linkId)).run();
+    const result = this.database.delete(taskResourcesTable).where(eq10(taskResourcesTable.id, linkId)).run();
     return result.changes > 0;
   }
 };
@@ -1150,6 +1270,14 @@ var planQuestionRecordSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string()
 });
+var taskContextItemSchema = z.string().trim().min(1).max(4e3);
+var taskContextListSchema = z.array(taskContextItemSchema).max(200);
+var taskContextRecordSchema = z.object({
+  goal: taskContextListSchema,
+  criticalConditions: taskContextListSchema,
+  forbiddenInterpretations: taskContextListSchema,
+  acceptanceCriteria: taskContextListSchema
+});
 var linkedResourceRecordSchema = z.object({
   id: z.string(),
   resourceId: z.string(),
@@ -1175,6 +1303,7 @@ var taskDetailSchema = z.object({
   planRevisions: z.array(planRevisionRecordSchema),
   planComments: z.array(planCommentRecordSchema),
   planQuestions: z.array(planQuestionRecordSchema),
+  taskContext: taskContextRecordSchema,
   agentSession: agentSessionRecordSchema.nullable(),
   linkedTasks: z.array(linkedTaskRecordSchema),
   linkedResources: z.array(linkedResourceRecordSchema)
@@ -1228,6 +1357,10 @@ var savePlanInputSchema = z.object({
   taskId: z.string(),
   contentMd: z.string().trim().min(1, "\u041F\u043B\u0430\u043D \u043D\u0435 \u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043F\u0443\u0441\u0442\u044B\u043C."),
   openQuestions: z.array(z.string().trim().min(1).max(4e3)).max(50).optional(),
+  goal: taskContextListSchema.optional(),
+  criticalConditions: taskContextListSchema.optional(),
+  forbiddenInterpretations: taskContextListSchema.optional(),
+  acceptanceCriteria: taskContextListSchema.optional(),
   source: planSourceSchema.default("human")
 });
 var appendPlanExtensionInputSchema = z.object({
@@ -1634,6 +1767,17 @@ function createAppService(dependencies) {
   const emitDataChanged = (event) => {
     dependencies.onDataChanged?.(event);
   };
+  const hasTaskContextPatch = (input) => {
+    return input.goal !== void 0 || input.criticalConditions !== void 0 || input.forbiddenInterpretations !== void 0 || input.acceptanceCriteria !== void 0;
+  };
+  const mergeTaskContext = (current, input) => {
+    return {
+      goal: input.goal ?? current.goal,
+      criticalConditions: input.criticalConditions ?? current.criticalConditions,
+      forbiddenInterpretations: input.forbiddenInterpretations ?? current.forbiddenInterpretations,
+      acceptanceCriteria: input.acceptanceCriteria ?? current.acceptanceCriteria
+    };
+  };
   const getTaskDetail = async (taskId, projectId) => {
     const task = await dependencies.taskRepository.getById(taskId, projectId);
     if (!task) {
@@ -1643,11 +1787,12 @@ function createAppService(dependencies) {
     if (!project) {
       throw new Error(`Project ${task.projectId} was not found.`);
     }
-    const [plan, planRevisions, planComments, planQuestions, agentSession, linkedTasks, linkedResources] = await Promise.all([
+    const [plan, planRevisions, planComments, planQuestions, taskContext, agentSession, linkedTasks, linkedResources] = await Promise.all([
       dependencies.planRepository.getByTaskId(taskId),
       dependencies.planRepository.listRevisions(taskId),
       dependencies.planCommentRepository.listCommentsByTaskId(taskId),
       dependencies.planCommentRepository.listQuestionsByTaskId(taskId),
+      dependencies.taskContextRepository.getByTaskId(taskId),
       dependencies.agentSessionRepository.getByTaskId(taskId),
       dependencies.taskLinkRepository.listByTaskId(taskId),
       dependencies.taskResourceRepository.listByTaskId(taskId)
@@ -1659,6 +1804,7 @@ function createAppService(dependencies) {
       planRevisions,
       planComments,
       planQuestions,
+      taskContext,
       agentSession,
       linkedTasks,
       linkedResources
@@ -1917,6 +2063,10 @@ function createAppService(dependencies) {
             content
           });
         }
+      }
+      if (hasTaskContextPatch(parsedInput)) {
+        const nextTaskContext = mergeTaskContext(detail.taskContext, parsedInput);
+        await dependencies.taskContextRepository.replaceByTaskId(parsedInput.taskId, nextTaskContext);
       }
       await dependencies.projectRepository.touch(detail.task.projectId);
       if (parsedInput.source === "agent") {
@@ -2245,7 +2395,7 @@ function registerIpcHandlers(ipcMain, appService) {
 
 // src/main/mcp/mcp-http-server.ts
 import { createServer } from "http";
-import { randomUUID as randomUUID9 } from "crypto";
+import { randomUUID as randomUUID10 } from "crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
@@ -2275,6 +2425,51 @@ var TaskContext = class {
   invalidate() {
     this._detail = null;
   }
+  normalizeTaskContextList(items) {
+    if (items === void 0) {
+      return void 0;
+    }
+    const normalized = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const item of items) {
+      const value = item.trim();
+      if (value.length === 0 || seen.has(value)) {
+        continue;
+      }
+      seen.add(value);
+      normalized.push(value);
+    }
+    return normalized;
+  }
+  normalizeTaskContextInput(input) {
+    if (!input) {
+      return void 0;
+    }
+    const goal = this.normalizeTaskContextList(input.goal);
+    const criticalConditions = this.normalizeTaskContextList(input.criticalConditions);
+    const forbiddenInterpretations = this.normalizeTaskContextList(input.forbiddenInterpretations);
+    const acceptanceCriteria = this.normalizeTaskContextList(input.acceptanceCriteria);
+    if (goal === void 0 && criticalConditions === void 0 && forbiddenInterpretations === void 0 && acceptanceCriteria === void 0) {
+      return void 0;
+    }
+    return {
+      goal,
+      criticalConditions,
+      forbiddenInterpretations,
+      acceptanceCriteria
+    };
+  }
+  mergeTaskContext(current, input) {
+    if (!input) {
+      return void 0;
+    }
+    return {
+      goal: input.goal ?? current.goal,
+      criticalConditions: input.criticalConditions ?? current.criticalConditions,
+      forbiddenInterpretations: input.forbiddenInterpretations ?? current.forbiddenInterpretations,
+      acceptanceCriteria: input.acceptanceCriteria ?? current.acceptanceCriteria
+    };
+  }
   // ─── Task ────────────────────────────────────────────────────────────────────
   async getTask() {
     return (await this.detail()).task;
@@ -2287,8 +2482,20 @@ var TaskContext = class {
   async getPlan() {
     return (await this.detail()).plan;
   }
-  async savePlan(contentMd, openQuestions, source = "agent") {
-    await this.appService.savePlan({ taskId: this.taskId, contentMd, openQuestions, source });
+  async savePlan(contentMd, openQuestions, source = "agent", taskContext) {
+    const detail = await this.detail();
+    const normalizedTaskContext = this.normalizeTaskContextInput(taskContext);
+    const mergedTaskContext = this.mergeTaskContext(detail.taskContext, normalizedTaskContext);
+    await this.appService.savePlan({
+      taskId: this.taskId,
+      contentMd,
+      openQuestions,
+      source,
+      goal: mergedTaskContext?.goal,
+      criticalConditions: mergedTaskContext?.criticalConditions,
+      forbiddenInterpretations: mergedTaskContext?.forbiddenInterpretations,
+      acceptanceCriteria: mergedTaskContext?.acceptanceCriteria
+    });
     this.invalidate();
   }
   async appendExtension(content, author = "agent") {
@@ -2321,6 +2528,9 @@ var TaskContext = class {
   // ─── Plan questions ───────────────────────────────────────────────────────────
   async getPlanQuestions() {
     return (await this.detail()).planQuestions;
+  }
+  async getTaskContext() {
+    return (await this.detail()).taskContext;
   }
   async getQuestion(questionId) {
     const questions = await this.getPlanQuestions();
@@ -2363,6 +2573,7 @@ var TaskContext = class {
       plan: detail.plan,
       planComments: detail.planComments,
       planQuestions: detail.planQuestions,
+      taskContext: detail.taskContext,
       linkedResources: detail.linkedResources,
       linkedTasks: detail.linkedTasks,
       project: detail.project
@@ -2606,16 +2817,37 @@ function registerPlanActions(server, context) {
       inputSchema: {
         taskId: z2.string(),
         contentMd: z2.string().min(1),
-        openQuestions: z2.array(z2.string().min(1)).optional()
+        openQuestions: z2.array(z2.string().min(1)).optional(),
+        goal: z2.array(z2.string().min(1)).optional(),
+        criticalConditions: z2.array(z2.string().min(1)).optional(),
+        forbiddenInterpretations: z2.array(z2.string().min(1)).optional(),
+        acceptanceCriteria: z2.array(z2.string().min(1)).optional()
       }
     },
-    async ({ contentMd, openQuestions, taskId }) => {
+    async ({
+      acceptanceCriteria,
+      contentMd,
+      criticalConditions,
+      forbiddenInterpretations,
+      goal,
+      openQuestions,
+      taskId
+    }) => {
       const taskContext = await context.requireTaskContext(taskId);
       context.getLogger().info("mcp", "Tool save_plan called", {
         taskId,
-        openQuestionsCount: openQuestions?.length ?? 0
+        openQuestionsCount: openQuestions?.length ?? 0,
+        goalCount: goal?.length ?? 0,
+        criticalConditionsCount: criticalConditions?.length ?? 0,
+        forbiddenInterpretationsCount: forbiddenInterpretations?.length ?? 0,
+        acceptanceCriteriaCount: acceptanceCriteria?.length ?? 0
       });
-      await taskContext.savePlan(contentMd, openQuestions, "agent");
+      await taskContext.savePlan(contentMd, openQuestions, "agent", {
+        goal,
+        criticalConditions,
+        forbiddenInterpretations,
+        acceptanceCriteria
+      });
       context.touchSession({ taskId });
       return {
         content: textContent("\u041F\u043B\u0430\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D.")
@@ -2766,9 +2998,18 @@ function serializePlanQuestion(question) {
     updatedAt: question.updatedAt
   };
 }
-function serializePlanBlock(plan, comments, questions) {
+function serializePlanBlock(plan, comments, questions, taskContext) {
   if (!plan) {
-    return { exists: false, contentMd: "", comments: [], questions: [] };
+    return {
+      exists: false,
+      contentMd: "",
+      comments: [],
+      questions: [],
+      goal: taskContext.goal,
+      criticalConditions: taskContext.criticalConditions,
+      forbiddenInterpretations: taskContext.forbiddenInterpretations,
+      acceptanceCriteria: taskContext.acceptanceCriteria
+    };
   }
   return {
     exists: true,
@@ -2776,14 +3017,18 @@ function serializePlanBlock(plan, comments, questions) {
     source: plan.source,
     updatedAt: plan.updatedAt,
     comments: comments.map(serializePlanComment),
-    questions: questions.map(serializePlanQuestion)
+    questions: questions.map(serializePlanQuestion),
+    goal: taskContext.goal,
+    criticalConditions: taskContext.criticalConditions,
+    forbiddenInterpretations: taskContext.forbiddenInterpretations,
+    acceptanceCriteria: taskContext.acceptanceCriteria
   };
 }
 function serializeTaskDetail(detail) {
   return {
     linkedResources: detail.linkedResources.map(serializeLinkedResource),
     linkedTasks: detail.linkedTasks.map(serializeLinkedTask),
-    plan: serializePlanBlock(detail.plan, detail.planComments, detail.planQuestions),
+    plan: serializePlanBlock(detail.plan, detail.planComments, detail.planQuestions, detail.taskContext),
     project: serializeProjectSummary(detail.project),
     task: serializeTask(detail.task)
   };
@@ -2810,7 +3055,12 @@ function serializeTaskSnapshot(snapshot) {
   return {
     task: serializeTask(snapshot.task),
     project: serializeProjectSummary(snapshot.project),
-    plan: serializePlanBlock(snapshot.plan, snapshot.planComments, snapshot.planQuestions),
+    plan: serializePlanBlock(
+      snapshot.plan,
+      snapshot.planComments,
+      snapshot.planQuestions,
+      snapshot.taskContext
+    ),
     linkedResources: snapshot.linkedResources.map(serializeLinkedResource),
     linkedTasks: snapshot.linkedTasks.map(serializeLinkedTask)
   };
@@ -2824,7 +3074,14 @@ function serializeDeltaSnapshot(snapshot, since) {
   const newComments = snapshot.planComments.filter((c) => new Date(c.updatedAt).getTime() > since);
   const newQuestions = snapshot.planQuestions.filter((q) => new Date(q.updatedAt).getTime() > since);
   const plan = planUpdated || newComments.length > 0 || newQuestions.length > 0 ? {
-    ...planUpdated && snapshot.plan ? { contentMd: snapshot.plan.contentMd, updatedAt: snapshot.plan.updatedAt } : UNCHANGED,
+    ...planUpdated && snapshot.plan ? {
+      contentMd: snapshot.plan.contentMd,
+      updatedAt: snapshot.plan.updatedAt,
+      goal: snapshot.taskContext.goal,
+      criticalConditions: snapshot.taskContext.criticalConditions,
+      forbiddenInterpretations: snapshot.taskContext.forbiddenInterpretations,
+      acceptanceCriteria: snapshot.taskContext.acceptanceCriteria
+    } : UNCHANGED,
     comments: newComments.length > 0 ? newComments.map(serializePlanComment) : UNCHANGED,
     questions: newQuestions.length > 0 ? newQuestions.map(serializePlanQuestion) : UNCHANGED
   } : UNCHANGED;
@@ -3348,15 +3605,28 @@ function registerTaskActions(server, context) {
   server.registerTool(
     "sync_task",
     {
-      description: "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443 \u0441 \u0441\u0435\u0441\u0441\u0438\u0435\u0439. \u041F\u0435\u0440\u0432\u044B\u0439 \u0432\u044B\u0437\u043E\u0432 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u043F\u043E\u043B\u043D\u044B\u0439 \u0441\u043D\u0430\u043F\u0448\u043E\u0442 \u0438 \u043F\u0435\u0440\u0435\u0432\u043E\u0434\u0438\u0442 \u0441\u0435\u0441\u0441\u0438\u044E \u0432 work-\u0440\u0435\u0436\u0438\u043C. \u041F\u043E\u0432\u0442\u043E\u0440\u043D\u044B\u0435 \u0432\u044B\u0437\u043E\u0432\u044B \u0432 \u0440\u0430\u043C\u043A\u0430\u0445 \u0442\u043E\u0439 \u0436\u0435 \u0441\u0435\u0441\u0441\u0438\u0438 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u044E\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0441 \u043C\u043E\u043C\u0435\u043D\u0442\u0430 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u0432\u044B\u0437\u043E\u0432\u0430 (delta-\u0440\u0435\u0436\u0438\u043C). \u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+      description: "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443 \u0441 \u0441\u0435\u0441\u0441\u0438\u0435\u0439. \u041F\u0435\u0440\u0432\u044B\u0439 \u0432\u044B\u0437\u043E\u0432 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u043F\u043E\u043B\u043D\u044B\u0439 \u0441\u043D\u0430\u043F\u0448\u043E\u0442 \u0438 \u043F\u0435\u0440\u0435\u0432\u043E\u0434\u0438\u0442 \u0441\u0435\u0441\u0441\u0438\u044E \u0432 work-\u0440\u0435\u0436\u0438\u043C. \u041F\u043E\u0432\u0442\u043E\u0440\u043D\u044B\u0435 \u0432\u044B\u0437\u043E\u0432\u044B \u0432 \u0440\u0430\u043C\u043A\u0430\u0445 \u0442\u043E\u0439 \u0436\u0435 \u0441\u0435\u0441\u0441\u0438\u0438 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u044E\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0441 \u043C\u043E\u043C\u0435\u043D\u0442\u0430 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u0432\u044B\u0437\u043E\u0432\u0430 (delta-\u0440\u0435\u0436\u0438\u043C). \u0415\u0441\u043B\u0438 \u043F\u0440\u043E\u0435\u043A\u0442 \u0437\u0430\u0434\u0430\u0447\u0438 \u043D\u0435 \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D, \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438.",
       inputSchema: {
         taskId: z6.string()
       }
     },
     async ({ taskId }) => {
+      const activeProjectId = context.getActiveProjectId();
+      const detail = await context.getAppService().getTaskDetail(taskId);
+      const taskProjectId = detail.task.projectId;
+      if (activeProjectId !== taskProjectId) {
+        context.setActiveProjectId(taskProjectId);
+        context.resetSession();
+        context.getLogger().info("mcp", "Tool sync_task auto-activated project", {
+          taskId,
+          previousProjectId: activeProjectId,
+          projectId: taskProjectId
+        });
+      }
       const session = context.getAgentSession();
       context.getLogger().debug("mcp", "Tool sync_task called", {
         taskId,
+        projectId: taskProjectId,
         mode: session.lastMode,
         sessionTaskId: session.taskId
       });
@@ -3565,7 +3835,7 @@ var McpHttpServer = class {
     if (!sessionId && isInitializeRequest(body)) {
       const server = createMcpServer(this.appService, this.logger);
       const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID9(),
+        sessionIdGenerator: () => randomUUID10(),
         enableJsonResponse: true
       });
       transport.onclose = () => {
@@ -3820,6 +4090,7 @@ function bootstrapMainProcess(runtime) {
     const agentSessionRepository = new AgentSessionRepository(databaseContext.database);
     const resourceRepository = new ResourceRepository(databaseContext.database);
     const taskResourceRepository = new TaskResourceRepository(databaseContext.database);
+    const taskContextRepository = new TaskContextRepository(databaseContext.database);
     const agentRegistry = createAgentRegistry();
     let appService;
     let mcpHttpServer = null;
@@ -3864,7 +4135,8 @@ function bootstrapMainProcess(runtime) {
       sqlite: databaseContext.sqlite,
       taskLinkRepository,
       taskRepository,
-      taskResourceRepository
+      taskResourceRepository,
+      taskContextRepository
     });
     mcpHttpServer = new McpHttpServer(appService, logger);
     await mcpHttpServer.start();

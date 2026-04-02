@@ -1,5 +1,5 @@
 /*
-Назначение: Описывает Drizzle-схему SQLite для проектов, задач, текущих планов, ревизий планов и сессий агента.
+Назначение: Описывает Drizzle-схему SQLite для проектов, задач, текущих планов, task context, ревизий планов и сессий агента.
 Не входит: Реализация запросов, подключение к базе и выполнение миграций.
 */
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -137,6 +137,46 @@ export const planQuestionsTable = sqliteTable("plan_questions", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
 });
 
+export const taskGoalsTable = sqliteTable("task_goals", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id")
+    .notNull()
+    .references(() => tasksTable.id, { onDelete: "cascade" }),
+  value: text("value").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+
+export const taskCriticalConditionsTable = sqliteTable("task_critical_conditions", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id")
+    .notNull()
+    .references(() => tasksTable.id, { onDelete: "cascade" }),
+  value: text("value").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+
+export const taskForbiddenInterpretationsTable = sqliteTable("task_forbidden_interpretations", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id")
+    .notNull()
+    .references(() => tasksTable.id, { onDelete: "cascade" }),
+  value: text("value").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+
+export const taskAcceptanceCriteriaTable = sqliteTable("task_acceptance_criteria", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id")
+    .notNull()
+    .references(() => tasksTable.id, { onDelete: "cascade" }),
+  value: text("value").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+
 export const databaseSchema = {
   agentSessionsTable,
   planCommentsTable,
@@ -146,6 +186,10 @@ export const databaseSchema = {
   projectsTable,
   promptOverridesTable,
   resourcesTable,
+  taskAcceptanceCriteriaTable,
+  taskCriticalConditionsTable,
+  taskForbiddenInterpretationsTable,
+  taskGoalsTable,
   taskLinksTable,
   taskResourcesTable,
   tasksTable

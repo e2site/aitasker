@@ -1,5 +1,5 @@
 /*
-Назначение: Регистрирует MCP-экшены домена планирования: вопросы, сохранение плана, расширения, доработки и консолидация обсуждения.
+Назначение: Регистрирует MCP-экшены домена планирования: вопросы, сохранение плана с task context, расширения, доработки и консолидация обсуждения.
 Не входит: Операции с проектами, задачами вне плана, ресурсами и prompt-ами.
 */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -62,16 +62,37 @@ export function registerPlanActions(server: McpServer, context: McpControllerCon
       inputSchema: {
         taskId: z.string(),
         contentMd: z.string().min(1),
-        openQuestions: z.array(z.string().min(1)).optional()
+        openQuestions: z.array(z.string().min(1)).optional(),
+        goal: z.array(z.string().min(1)).optional(),
+        criticalConditions: z.array(z.string().min(1)).optional(),
+        forbiddenInterpretations: z.array(z.string().min(1)).optional(),
+        acceptanceCriteria: z.array(z.string().min(1)).optional()
       }
     },
-    async ({ contentMd, openQuestions, taskId }) => {
+    async ({
+      acceptanceCriteria,
+      contentMd,
+      criticalConditions,
+      forbiddenInterpretations,
+      goal,
+      openQuestions,
+      taskId
+    }) => {
       const taskContext = await context.requireTaskContext(taskId);
       context.getLogger().info("mcp", "Tool save_plan called", {
         taskId,
-        openQuestionsCount: openQuestions?.length ?? 0
+        openQuestionsCount: openQuestions?.length ?? 0,
+        goalCount: goal?.length ?? 0,
+        criticalConditionsCount: criticalConditions?.length ?? 0,
+        forbiddenInterpretationsCount: forbiddenInterpretations?.length ?? 0,
+        acceptanceCriteriaCount: acceptanceCriteria?.length ?? 0
       });
-      await taskContext.savePlan(contentMd, openQuestions, "agent");
+      await taskContext.savePlan(contentMd, openQuestions, "agent", {
+        goal,
+        criticalConditions,
+        forbiddenInterpretations,
+        acceptanceCriteria
+      });
       context.touchSession({ taskId });
 
       return {

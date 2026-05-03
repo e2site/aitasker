@@ -37,12 +37,14 @@
       "dist/**/*",
       "dist-electron/**/*",
       "build/icons/**/*",
+      "embeddings/**/*",
       "main.js",
       "preload.js",
       "package.json"
     ],
     "asarUnpack": [
-      "node_modules/better-sqlite3/**/*"
+      "node_modules/better-sqlite3/**/*",
+      "embeddings/**/*"
     ],
     "win": {
       "icon": "build/icons/icon.ico",
@@ -68,6 +70,7 @@
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-table": "^8.21.3",
     "@xenova/transformers": "^2.0.1",
+    "apache-arrow": "^18.1.0",
     "better-sqlite3": "^12.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

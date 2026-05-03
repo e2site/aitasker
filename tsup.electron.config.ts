@@ -25,6 +25,7 @@ export default defineConfig({
     "electron/renderer",
     "better-sqlite3",
     "@lancedb/lancedb",
-    "@xenova/transformers"
+    "@xenova/transformers",
+    "apache-arrow"
   ]
 });

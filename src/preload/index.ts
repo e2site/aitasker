@@ -66,6 +66,7 @@ const channels = {
   listResources: "app:list-resources",
   listTasks: "app:list-tasks",
   onDataChanged: "app:data-changed",
+  reindexPromptHints: "app:reindex-prompt-hints",
   restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
   searchPromptHints: "app:search-prompt-hints",
@@ -164,6 +165,9 @@ export function registerDesktopApi(runtime: PreloadRuntime): void {
       return () => {
         runtime.ipcRenderer.removeListener("app:focus-task", subscription);
       };
+    },
+    reindexPromptHints() {
+      return runtime.ipcRenderer.invoke(channels.reindexPromptHints);
     },
     restorePlanRevision(input: RestorePlanRevisionInput) {
       return runtime.ipcRenderer.invoke(channels.restorePlanRevision, input);

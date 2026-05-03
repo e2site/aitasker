@@ -25,6 +25,7 @@ import type {
   PromptHintRecord,
   PromptHintSearchResult,
   PromptOverrideRecord,
+  ReindexPromptHintsResult,
   ResourceRecord,
   RestorePlanRevisionInput,
   SavePlanInput,
@@ -142,6 +143,7 @@ export interface AppService {
   listProjects(): Promise<ProjectRecord[]>;
   listResources(): Promise<ResourceRecord[]>;
   listTasks(projectId?: string): Promise<TaskRecord[]>;
+  reindexPromptHints(): Promise<ReindexPromptHintsResult>;
   restorePlanRevision(input: RestorePlanRevisionInput): Promise<TaskDetail>;
   savePlan(input: SavePlanInput): Promise<TaskDetail>;
   searchPromptHints(input: SearchPromptHintsInput): Promise<PromptHintSearchResult[]>;
@@ -692,6 +694,35 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
       });
 
       return hint;
+    },
+    async reindexPromptHints() {
+      const projects = await dependencies.projectRepository.list();
+      const failed: ReindexPromptHintsResult["failed"] = [];
+      let ok = 0;
+
+      for (const project of projects) {
+        const hintContext = createHintContext(
+          project.id,
+          dependencies.promptHintRepository,
+          dependencies.promptVectorService
+        );
+        const hints = await hintContext.list();
+
+        for (const hint of hints) {
+          try {
+            await hintContext.edit(hint.id, hint.text);
+            ok += 1;
+          } catch (error) {
+            failed.push({
+              projectId: project.id,
+              hintId: hint.id,
+              message: error instanceof Error ? error.message : String(error)
+            });
+          }
+        }
+      }
+
+      return { ok, failed };
     },
     async deletePromptHint(input) {
       const parsedInput = deletePromptHintInputSchema.parse(input);

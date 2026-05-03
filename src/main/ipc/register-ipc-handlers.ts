@@ -31,6 +31,7 @@ const channels = {
   listProjects: "app:list-projects",
   listResources: "app:list-resources",
   listTasks: "app:list-tasks",
+  reindexPromptHints: "app:reindex-prompt-hints",
   restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
   searchPromptHints: "app:search-prompt-hints",
@@ -133,6 +134,9 @@ export function registerIpcHandlers(ipcMain: IpcMain, appService: AppService): v
   );
   ipcMain.handle(channels.listPromptHints, (_event, input) =>
     withIpcErrors(() => appService.listPromptHints(input))
+  );
+  ipcMain.handle(channels.reindexPromptHints, () =>
+    withIpcErrors(() => appService.reindexPromptHints())
   );
   ipcMain.handle(channels.searchPromptHints, (_event, input) =>
     withIpcErrors(() => appService.searchPromptHints(input))

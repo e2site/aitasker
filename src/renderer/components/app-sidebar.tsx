@@ -11,8 +11,10 @@ import {
   Download,
   FolderPlus,
   Lightbulb,
+  Loader2,
   Moon,
   Plus,
+  RefreshCw,
   Settings2,
   SlidersHorizontal,
   Sun,
@@ -46,6 +48,37 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [, setDrawerPage] = useAtom(drawerPageAtom);
   const [theme, setTheme] = useAtom(themeAtom);
   const taskActions = useAppMenuTaskActions();
+  const [isReindexing, setIsReindexing] = React.useState(false);
+
+  async function handleReindexPromptHints() {
+    if (isReindexing) return;
+    if (!window.confirm("Переиндексация может занять минуты. Продолжить?")) return;
+
+    setIsReindexing(true);
+    try {
+      const result = await window.desktop.reindexPromptHints();
+      const total = result.ok + result.failed.length;
+
+      if (result.failed.length === 0) {
+        window.alert(`Переиндексация завершена. Обновлено подсказок: ${result.ok}.`);
+        return;
+      }
+
+      const sample = result.failed
+        .slice(0, 5)
+        .map((failure) => `• ${failure.hintId}: ${failure.message}`)
+        .join("\n");
+      const tail = result.failed.length > 5 ? `\n…и ещё ${result.failed.length - 5}.` : "";
+      window.alert(
+        `Переиндексация завершена с ошибками.\nОбновлено: ${result.ok} из ${total}.\nОшибок: ${result.failed.length}.\n\n${sample}${tail}`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      window.alert(`Не удалось запустить переиндексацию: ${message}`);
+    } finally {
+      setIsReindexing(false);
+    }
+  }
 
   return (
     <Sidebar {...props}>
@@ -143,6 +176,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <SidebarMenuButton onClick={() => setDrawerPage("prompt-overrides")}>
                   <SlidersHorizontal />
                   Настройки промтов
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={handleReindexPromptHints} disabled={isReindexing}>
+                  {isReindexing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                  {isReindexing ? "Переиндексация..." : "Переиндексировать векторы"}
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

@@ -467,6 +467,17 @@ export interface SetWindowTitleContextInput {
   taskTitle: string | null;
 }
 
+export interface ReindexPromptHintsFailure {
+  projectId: string;
+  hintId: string;
+  message: string;
+}
+
+export interface ReindexPromptHintsResult {
+  ok: number;
+  failed: ReindexPromptHintsFailure[];
+}
+
 export interface DesktopApi {
   appendPlanExtension(input: AppendPlanExtensionInput): Promise<TaskDetail>;
   appendPlanImprovement(input: AppendPlanImprovementInput): Promise<TaskDetail>;
@@ -495,6 +506,7 @@ export interface DesktopApi {
   listTasks(): Promise<TaskRecord[]>;
   onDataChanged(listener: (event: DesktopDataChangeEvent) => void): () => void;
   onFocusTask(listener: (taskId: string) => void): () => void;
+  reindexPromptHints(): Promise<ReindexPromptHintsResult>;
   restorePlanRevision(input: RestorePlanRevisionInput): Promise<TaskDetail>;
   savePlan(input: SavePlanInput): Promise<TaskDetail>;
   searchPromptHints(input: SearchPromptHintsInput): Promise<PromptHintSearchResult[]>;

@@ -80,6 +80,12 @@ export class PromptVectorWorkerStore {
 
     try {
       const vector = await this.embed(input.text);
+      const existingDimension = await this.readVectorDimension(tableContext.table);
+
+      if (existingDimension !== null && existingDimension !== vector.length) {
+        return [];
+      }
+
       let query = tableContext.table
         .vectorSearch(vector)
         .column("vector")
@@ -124,12 +130,39 @@ export class PromptVectorWorkerStore {
       }
 
       table = await connection.openTable(this.tableName);
+      const existingDimension = await this.readVectorDimension(table);
+
+      if (existingDimension !== null && existingDimension !== row.vector.length) {
+        table.close();
+        table = null;
+        await connection.dropTable(this.tableName);
+        table = await connection.createTable(this.tableName, [row], {
+          existOk: true,
+          mode: "create"
+        });
+        return;
+      }
+
       await table.delete(this.buildIdPredicate(input.projectId, input.hintId));
       await table.add([row]);
     } finally {
       table?.close();
       connection.close();
     }
+  }
+
+  private async readVectorDimension(
+    table: Awaited<ReturnType<Awaited<ReturnType<typeof lancedb.connect>>["openTable"]>>
+  ): Promise<number | null> {
+    const schema = await table.schema();
+    const vectorField = schema.fields.find((field) => field.name === "vector");
+
+    if (!vectorField) {
+      return null;
+    }
+
+    const fieldType = vectorField.type as { listSize?: number };
+    return typeof fieldType.listSize === "number" ? fieldType.listSize : null;
   }
 
   private async openExistingTable(): Promise<{

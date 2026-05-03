@@ -26,6 +26,8 @@ const PROMPT_LABELS: Record<PromptId, string> = {
   "finish-task": "Завершение задачи",
   "consolidate-discussion": "Сжать переписку в план",
   "project-skill": "Создание SKILL.md",
+  "search-hints": "Поиск подсказок",
+  "save-hints": "Сохранить инсайты",
 };
 
 const PROMPT_IDS = Object.keys(BASE_PROMPT_TEMPLATES) as PromptId[];

@@ -11,8 +11,10 @@ const channels = {
   appendPlanImprovement: "app:append-plan-improvement",
   consolidatePlanDiscussion: "app:consolidate-plan-discussion",
   createProject: "app:create-project",
+  createPromptHint: "app:create-prompt-hint",
   createResource: "app:create-resource",
   createTask: "app:create-task",
+  deletePromptHint: "app:delete-prompt-hint",
   deletePromptOverride: "app:delete-prompt-override",
   deleteResource: "app:delete-resource",
   deleteTask: "app:delete-task",
@@ -24,18 +26,21 @@ const channels = {
   importData: "app:import-data",
   linkResource: "app:link-resource",
   linkTask: "app:link-task",
+  listPromptHints: "app:list-prompt-hints",
   listPromptOverrides: "app:list-prompt-overrides",
   listProjects: "app:list-projects",
   listResources: "app:list-resources",
   listTasks: "app:list-tasks",
   restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
+  searchPromptHints: "app:search-prompt-hints",
   unlinkResource: "app:unlink-resource",
   unlinkTask: "app:unlink-task",
   updateResource: "app:update-resource",
   updateTask: "app:update-task",
   updateTaskStatus: "app:update-task-status",
   updateProjectProfile: "app:update-project-profile",
+  updatePromptHint: "app:update-prompt-hint",
   upsertPromptOverride: "app:upsert-prompt-override"
 } as const;
 
@@ -63,11 +68,17 @@ export function registerIpcHandlers(ipcMain: IpcMain, appService: AppService): v
   ipcMain.handle(channels.createProject, (_event, input) =>
     withIpcErrors(() => appService.createProject(input))
   );
+  ipcMain.handle(channels.createPromptHint, (_event, input) =>
+    withIpcErrors(() => appService.createPromptHint(input))
+  );
   ipcMain.handle(channels.createTask, (_event, input) =>
     withIpcErrors(() => appService.createTask(input))
   );
   ipcMain.handle(channels.deleteTask, (_event, taskId: string) =>
     withIpcErrors(() => appService.deleteTask(taskId))
+  );
+  ipcMain.handle(channels.deletePromptHint, (_event, input) =>
+    withIpcErrors(() => appService.deletePromptHint(input))
   );
   ipcMain.handle(channels.restorePlanRevision, (_event, input) =>
     withIpcErrors(() => appService.restorePlanRevision(input))
@@ -120,8 +131,17 @@ export function registerIpcHandlers(ipcMain: IpcMain, appService: AppService): v
   ipcMain.handle(channels.listResources, () =>
     withIpcErrors(() => appService.listResources())
   );
+  ipcMain.handle(channels.listPromptHints, (_event, input) =>
+    withIpcErrors(() => appService.listPromptHints(input))
+  );
+  ipcMain.handle(channels.searchPromptHints, (_event, input) =>
+    withIpcErrors(() => appService.searchPromptHints(input))
+  );
   ipcMain.handle(channels.updateResource, (_event, input) =>
     withIpcErrors(() => appService.updateResource(input))
+  );
+  ipcMain.handle(channels.updatePromptHint, (_event, input) =>
+    withIpcErrors(() => appService.updatePromptHint(input))
   );
   ipcMain.handle(channels.deleteResource, (_event, id: string) =>
     withIpcErrors(() => appService.deleteResource(id))

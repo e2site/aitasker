@@ -22,7 +22,9 @@ export type PromptId =
   | "finish-task"
   | "consolidate-discussion"
   | "reload-context"
-  | "project-skill";
+  | "project-skill"
+  | "search-hints"
+  | "save-hints";
 
 export interface ProjectPromptContext {
   id: string;
@@ -212,7 +214,7 @@ export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
 4. Контекстные заметки добавляй через append_plan_extension.
 5. Решения и проблемы фиксируй через append_plan_improvement.
 6. Проверь все ли goal выполнены, не нарушены forbiddenInterpretations и соответствует acceptanceCriteria
-6. После завершения переведи статус в testing через update_task_status.`,
+7. После завершения переведи статус в testing через update_task_status.`,
 
   "finish-task":
     `Заверши задачу "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}}.
@@ -255,7 +257,19 @@ export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
 1. Прочитай карточку проекта через get_active_project.
 2. Путь к файлу: {{skillFilePath}}.
 3. Создай или обнови SKILL.md с описанием стека, конвенций и особенностей проекта.
-4. Сохрани путь через update_project_profile.`
+4. Сохрани путь через update_project_profile.`,
+
+  "search-hints":
+    `Активируй проект (ID: {{projectId}}) через activate_project.
+Перед работой над задачей "{{taskTitle}}" поищи подсказки проекта.
+Вызови search_project_hints с ключевыми словами по теме задачи.
+Если релевантного нет — игнорируй и продолжай по плану.`,
+
+  "save-hints":
+    `Активируй проект (ID: {{projectId}}) через activate_project.
+Сохрани важные инсайты по итогам задачи "{{taskTitle}}" через add_project_hints.
+Только то, что пригодится в будущих задачах: грабли, скрытые зависимости, нюансы окружения.
+Очевидное и общее не добавляй. Если важного нет — пропусти.`
 };
 
 const PROMPT_META: Record<PromptId, { title: string; description: string }> = {
@@ -294,6 +308,14 @@ const PROMPT_META: Record<PromptId, { title: string; description: string }> = {
   "project-skill": {
     title: "Создание SKILL.md",
     description: "Обновить SKILL.md и карточку проекта."
+  },
+  "search-hints": {
+    title: "Поиск подсказок",
+    description: "Найти релевантные инсайты проекта по теме задачи."
+  },
+  "save-hints": {
+    title: "Сохранить инсайты",
+    description: "Записать важные находки по итогам задачи."
   }
 };
 

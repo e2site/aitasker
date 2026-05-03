@@ -1,5 +1,5 @@
 /*
-Назначение: Описывает общие доменные модели, схемы валидации и preload-контракт десктопного приложения, включая операции с задачами, планом, task context, обсуждением и статусами.
+Назначение: Описывает общие доменные модели, схемы валидации и preload/AppService-контракты десктопного приложения, включая операции с задачами, подсказками, планом, task context, обсуждением и статусами.
 Не входит: Реализация репозиториев, детали renderer-компонентов и интеграция с внешними SDK.
 */
 import { z } from "zod";
@@ -93,6 +93,20 @@ export const resourceRecordSchema = z.object({
   updatedAt: z.string()
 });
 export type ResourceRecord = z.infer<typeof resourceRecordSchema>;
+
+export const promptHintRecordSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  text: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+export type PromptHintRecord = z.infer<typeof promptHintRecordSchema>;
+
+export const promptHintSearchResultSchema = promptHintRecordSchema.extend({
+  score: z.number()
+});
+export type PromptHintSearchResult = z.infer<typeof promptHintSearchResultSchema>;
 
 export const planCommentKindSchema = z.enum(["discussion", "extension", "improvement"]);
 export type PlanCommentKind = z.infer<typeof planCommentKindSchema>;
@@ -315,6 +329,44 @@ export const unlinkResourceInputSchema = z.object({
 });
 export type UnlinkResourceInput = z.infer<typeof unlinkResourceInputSchema>;
 
+export const listPromptHintsInputSchema = z.object({
+  projectId: z.string().trim().min(1)
+});
+export type ListPromptHintsInput = z.infer<typeof listPromptHintsInputSchema>;
+
+export const searchPromptHintsInputSchema = z.object({
+  projectId: z.string().trim().min(1),
+  text: z.string().trim().min(1, "Введите текст для поиска.").max(8_000),
+  limit: z.number().int().min(1).max(50)
+});
+export type SearchPromptHintsInput = z.infer<typeof searchPromptHintsInputSchema>;
+
+export const searchPromptHintsByKeywordsInputSchema = z.object({
+  projectId: z.string().trim().min(1),
+  keywords: z.array(z.string().trim().min(1).max(8_000)).min(1).max(20),
+  limit: z.number().int().min(1).max(50)
+});
+export type SearchPromptHintsByKeywordsInput = z.infer<typeof searchPromptHintsByKeywordsInputSchema>;
+
+export const createPromptHintInputSchema = z.object({
+  projectId: z.string().trim().min(1),
+  text: z.string().trim().min(1, "Подсказка не может быть пустой.").max(8_000)
+});
+export type CreatePromptHintInput = z.infer<typeof createPromptHintInputSchema>;
+
+export const updatePromptHintInputSchema = z.object({
+  projectId: z.string().trim().min(1),
+  hintId: z.string().trim().min(1),
+  text: z.string().trim().min(1, "Подсказка не может быть пустой.").max(8_000)
+});
+export type UpdatePromptHintInput = z.infer<typeof updatePromptHintInputSchema>;
+
+export const deletePromptHintInputSchema = z.object({
+  projectId: z.string().trim().min(1),
+  hintId: z.string().trim().min(1)
+});
+export type DeletePromptHintInput = z.infer<typeof deletePromptHintInputSchema>;
+
 export const deleteTaskResultSchema = z.object({
   deletedTaskId: z.string()
 });
@@ -387,8 +439,10 @@ export const desktopDataChangeEventSchema = z.object({
     "append-plan-improvement",
     "consolidate-plan-discussion",
     "create-project",
+    "create-prompt-hint",
     "create-resource",
     "create-task",
+    "delete-prompt-hint",
     "delete-resource",
     "delete-task",
     "link-resource",
@@ -397,6 +451,7 @@ export const desktopDataChangeEventSchema = z.object({
     "save-plan",
     "unlink-resource",
     "unlink-task",
+    "update-prompt-hint",
     "update-project-profile",
     "update-resource",
     "update-task",
@@ -418,9 +473,11 @@ export interface DesktopApi {
   answerPlanQuestion(input: AnswerPlanQuestionInput): Promise<TaskDetail>;
   consolidatePlanDiscussion(input: ConsolidatePlanDiscussionInput): Promise<TaskDetail>;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
+  createPromptHint(input: CreatePromptHintInput): Promise<PromptHintRecord>;
   createResource(input: CreateResourceInput): Promise<ResourceRecord>;
   createTask(input: CreateTaskInput): Promise<TaskDetail>;
   deletePromptOverride(input: DeletePromptOverrideInput): Promise<void>;
+  deletePromptHint(input: DeletePromptHintInput): Promise<boolean>;
   deleteResource(id: string): Promise<void>;
   deleteTask(taskId: string): Promise<DeleteTaskResult>;
   exportData(): Promise<{ filePath: string } | null>;
@@ -432,6 +489,7 @@ export interface DesktopApi {
   linkResource(input: LinkResourceInput): Promise<TaskDetail>;
   linkTask(input: LinkTaskInput): Promise<TaskDetail>;
   listPromptOverrides(): Promise<PromptOverrideRecord[]>;
+  listPromptHints(input: ListPromptHintsInput): Promise<PromptHintRecord[]>;
   listProjects(): Promise<ProjectRecord[]>;
   listResources(): Promise<ResourceRecord[]>;
   listTasks(): Promise<TaskRecord[]>;
@@ -439,11 +497,13 @@ export interface DesktopApi {
   onFocusTask(listener: (taskId: string) => void): () => void;
   restorePlanRevision(input: RestorePlanRevisionInput): Promise<TaskDetail>;
   savePlan(input: SavePlanInput): Promise<TaskDetail>;
+  searchPromptHints(input: SearchPromptHintsInput): Promise<PromptHintSearchResult[]>;
   setWindowTheme(theme: WindowTheme): Promise<void>;
   setWindowTitleContext(input: SetWindowTitleContextInput): Promise<void>;
   unlinkResource(input: UnlinkResourceInput): Promise<TaskDetail>;
   unlinkTask(input: UnlinkTaskInput): Promise<TaskDetail>;
   updateProjectProfile(input: UpdateProjectProfileInput): Promise<ProjectRecord>;
+  updatePromptHint(input: UpdatePromptHintInput): Promise<PromptHintRecord>;
   updateResource(input: UpdateResourceInput): Promise<ResourceRecord>;
   updateTask(input: UpdateTaskInput): Promise<TaskDetail>;
   updateTaskStatus(input: UpdateTaskStatusInput): Promise<TaskDetail>;

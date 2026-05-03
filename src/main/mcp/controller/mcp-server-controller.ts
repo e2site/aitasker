@@ -3,6 +3,7 @@
 Не входит: Создание экземпляра McpServer и конфигурация его базовых capabilities.
 */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerHintActions } from "../actions/hint-actions";
 import { registerPlanActions } from "../actions/plan-actions";
 import { registerProjectActions } from "../actions/project-actions";
 import { registerPromptActions } from "../actions/prompt-actions";
@@ -27,6 +28,7 @@ export class McpServerController {
 
   register() {
     registerProjectActions(this.server, this.context);
+    registerHintActions(this.server, this.context);
     registerTaskActions(this.server, this.context);
     registerPlanActions(this.server, this.context);
     registerResourceActions(this.server, this.context);

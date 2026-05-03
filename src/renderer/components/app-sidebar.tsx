@@ -1,3 +1,7 @@
+/*
+Назначение: Отрисовывает боковое меню приложения и переключает основные страницы, drawer-экраны и тему.
+Не входит: Контент страниц, загрузка детальных данных задач и реализация drawer-форм.
+*/
 import * as React from "react";
 import { useAtom } from "jotai";
 import {
@@ -6,6 +10,7 @@ import {
   Copy,
   Download,
   FolderPlus,
+  Lightbulb,
   Moon,
   Plus,
   Settings2,
@@ -30,7 +35,7 @@ import {
 } from "@/renderer/components/ui/sidebar";
 import { useProjectsQuery } from "@/renderer/features/projects/use-project-queries";
 import { selectedProjectIdAtom } from "@/renderer/features/projects/selected-project-id-state";
-import { currentPageAtom, type AppPage } from "@/renderer/features/navigation/current-page-state";
+import { currentPageAtom } from "@/renderer/features/navigation/current-page-state";
 import { drawerPageAtom } from "@/renderer/features/navigation/drawer-state";
 import { useAppMenuTaskActions } from "@/renderer/app/app-menu-actions-context";
 
@@ -88,6 +93,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 >
                   <Copy />
                   Создать задачу в агенте
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={currentPage === "project-hints"}
+                  onClick={() => setCurrentPage("project-hints")}
+                >
+                  <Lightbulb />
+                  Подсказки
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

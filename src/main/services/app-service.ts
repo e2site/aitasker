@@ -1,5 +1,5 @@
 /*
-Назначение: Дает renderer и MCP единый сервисный API для работы с проектами, задачами, планами, task context, расширениями и доработками.
+Назначение: Дает renderer и MCP единый сервисный API для работы с проектами, задачами, подсказками, планами, task context, расширениями и доработками.
 Не входит: Детали IPC-транспорта, управление Electron-окнами и низкоуровневый bootstrap SQLite.
 */
 import type {
@@ -10,8 +10,10 @@ import type {
   AppHealthSnapshot,
   ConsolidatePlanDiscussionInput,
   CreateProjectInput,
+  CreatePromptHintInput,
   CreateResourceInput,
   CreateTaskInput,
+  DeletePromptHintInput,
   DeletePromptOverrideInput,
   DesktopDataChangeEvent,
   DeleteTaskResult,
@@ -20,6 +22,8 @@ import type {
   PlanCommentRecord,
   PlanQuestionRecord,
   ProjectRecord,
+  PromptHintRecord,
+  PromptHintSearchResult,
   PromptOverrideRecord,
   ResourceRecord,
   RestorePlanRevisionInput,
@@ -28,8 +32,12 @@ import type {
   TaskDetail,
   TaskRecord,
   TaskStatus,
+  ListPromptHintsInput,
+  SearchPromptHintsByKeywordsInput,
+  SearchPromptHintsInput,
   UnlinkResourceInput,
   UnlinkTaskInput,
+  UpdatePromptHintInput,
   UpdateResourceInput,
   UpdateTaskInput,
   UpdateTaskStatusInput,
@@ -43,15 +51,21 @@ import {
   appendPlanImprovementInputSchema,
   consolidatePlanDiscussionInputSchema,
   createProjectInputSchema,
+  createPromptHintInputSchema,
   createResourceInputSchema,
   createTaskInputSchema,
+  deletePromptHintInputSchema,
   deletePromptOverrideInputSchema,
   linkResourceInputSchema,
   linkTaskInputSchema,
+  listPromptHintsInputSchema,
   restorePlanRevisionInputSchema,
   savePlanInputSchema,
+  searchPromptHintsByKeywordsInputSchema,
+  searchPromptHintsInputSchema,
   unlinkResourceInputSchema,
   unlinkTaskInputSchema,
+  updatePromptHintInputSchema,
   updateResourceInputSchema,
   updateTaskInputSchema,
   updateTaskStatusInputSchema,
@@ -67,6 +81,7 @@ import {
 import type { AgentSessionRepository } from "../db/agent-session-repository";
 import type { PlanCommentRepository } from "../db/plan-comment-repository";
 import type { PlanRepository } from "../db/plan-repository";
+import type { PromptHintRepository } from "../db/prompt-hint-repository";
 import type { PromptOverrideRepository } from "../db/prompt-override-repository";
 import type { ProjectRepository } from "../db/project-repository";
 import type { ResourceRepository } from "../db/resource-repository";
@@ -74,6 +89,8 @@ import type { TaskContextRepository } from "../db/task-context-repository";
 import type { TaskLinkRepository } from "../db/task-link-repository";
 import type { TaskResourceRepository } from "../db/task-resource-repository";
 import type { TaskRepository } from "../db/task-repository";
+import { createHintContext } from "./hint-context";
+import type { PromptVectorService } from "./prompt-vector-service";
 
 export interface AppServiceDependencies {
   agentProviders: ReadonlyArray<AppHealthSnapshot["agentProviders"][number]>;
@@ -86,7 +103,9 @@ export interface AppServiceDependencies {
   planRepository: PlanRepository;
   platform: string;
   projectRepository: ProjectRepository;
+  promptHintRepository: PromptHintRepository;
   promptOverrideRepository: PromptOverrideRepository;
+  promptVectorService: PromptVectorService;
   relaunchApp(): void;
   resourceRepository: ResourceRepository;
   sqlite: import("better-sqlite3").Database;
@@ -103,9 +122,11 @@ export interface AppService {
   appendPlanImprovement(input: AppendPlanImprovementInput): Promise<PlanCommentRecord>;
   consolidatePlanDiscussion(input: ConsolidatePlanDiscussionInput): Promise<TaskDetail>;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
+  createPromptHint(input: CreatePromptHintInput): Promise<PromptHintRecord>;
   createResource(input: CreateResourceInput): Promise<ResourceRecord>;
   createTask(input: CreateTaskInput): Promise<TaskDetail>;
   deletePromptOverride(input: DeletePromptOverrideInput): Promise<void>;
+  deletePromptHint(input: DeletePromptHintInput): Promise<boolean>;
   deleteResource(id: string): Promise<void>;
   deleteTask(taskId: string): Promise<DeleteTaskResult>;
   exportData(): Promise<{ filePath: string } | null>;
@@ -117,17 +138,21 @@ export interface AppService {
   linkResource(input: LinkResourceInput): Promise<TaskDetail>;
   linkTask(input: LinkTaskInput): Promise<TaskDetail>;
   listPromptOverrides(): Promise<PromptOverrideRecord[]>;
+  listPromptHints(input: ListPromptHintsInput): Promise<PromptHintRecord[]>;
   listProjects(): Promise<ProjectRecord[]>;
   listResources(): Promise<ResourceRecord[]>;
   listTasks(projectId?: string): Promise<TaskRecord[]>;
   restorePlanRevision(input: RestorePlanRevisionInput): Promise<TaskDetail>;
   savePlan(input: SavePlanInput): Promise<TaskDetail>;
+  searchPromptHints(input: SearchPromptHintsInput): Promise<PromptHintSearchResult[]>;
+  searchPromptHintsByKeywords(input: SearchPromptHintsByKeywordsInput): Promise<PromptHintSearchResult[]>;
   unlinkResource(input: UnlinkResourceInput): Promise<TaskDetail>;
   unlinkTask(input: UnlinkTaskInput): Promise<TaskDetail>;
   updateResource(input: UpdateResourceInput): Promise<ResourceRecord>;
   updateTask(input: UpdateTaskInput): Promise<TaskDetail>;
   updateTaskStatus(input: UpdateTaskStatusInput): Promise<TaskDetail>;
   updateProjectProfile(input: UpdateProjectProfileInput): Promise<ProjectRecord>;
+  updatePromptHint(input: UpdatePromptHintInput): Promise<PromptHintRecord>;
   upsertPromptOverride(input: UpsertPromptOverrideInput): Promise<PromptOverrideRecord>;
 }
 
@@ -209,6 +234,16 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
     }
 
     throw new Error("Project id or project name is required.");
+  };
+
+  const createProjectHintContext = async (projectId: string) => {
+    const project = await dependencies.projectRepository.getById(projectId);
+
+    if (!project) {
+      throw new Error(`Проект ${projectId} не найден.`);
+    }
+
+    return createHintContext(project.id, dependencies.promptHintRepository, dependencies.promptVectorService);
   };
 
   return {
@@ -358,6 +393,20 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
       });
 
       return project;
+    },
+    async createPromptHint(input) {
+      const parsedInput = createPromptHintInputSchema.parse(input);
+      const hintContext = await createProjectHintContext(parsedInput.projectId);
+      const hint = await hintContext.add(parsedInput.text);
+
+      await dependencies.projectRepository.touch(parsedInput.projectId);
+      emitDataChanged({
+        reason: "create-prompt-hint",
+        projectId: parsedInput.projectId,
+        taskId: null
+      });
+
+      return hint;
     },
     async createTask(input) {
       const parsedInput = createTaskInputSchema.parse(input);
@@ -611,6 +660,54 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
         throw new Error(`Resource ${id} was not found.`);
       }
       return resource;
+    },
+    async listPromptHints(input) {
+      const parsedInput = listPromptHintsInputSchema.parse(input);
+      const hintContext = await createProjectHintContext(parsedInput.projectId);
+
+      return hintContext.list();
+    },
+    async searchPromptHints(input) {
+      const parsedInput = searchPromptHintsInputSchema.parse(input);
+      const hintContext = await createProjectHintContext(parsedInput.projectId);
+
+      return hintContext.search(parsedInput.text, parsedInput.limit);
+    },
+    async searchPromptHintsByKeywords(input) {
+      const parsedInput = searchPromptHintsByKeywordsInputSchema.parse(input);
+      const hintContext = await createProjectHintContext(parsedInput.projectId);
+
+      return hintContext.searchMany(parsedInput.keywords, parsedInput.limit);
+    },
+    async updatePromptHint(input) {
+      const parsedInput = updatePromptHintInputSchema.parse(input);
+      const hintContext = await createProjectHintContext(parsedInput.projectId);
+      const hint = await hintContext.edit(parsedInput.hintId, parsedInput.text);
+
+      await dependencies.projectRepository.touch(parsedInput.projectId);
+      emitDataChanged({
+        reason: "update-prompt-hint",
+        projectId: parsedInput.projectId,
+        taskId: null
+      });
+
+      return hint;
+    },
+    async deletePromptHint(input) {
+      const parsedInput = deletePromptHintInputSchema.parse(input);
+      const hintContext = await createProjectHintContext(parsedInput.projectId);
+      const deleted = await hintContext.delete(parsedInput.hintId);
+
+      if (deleted) {
+        await dependencies.projectRepository.touch(parsedInput.projectId);
+        emitDataChanged({
+          reason: "delete-prompt-hint",
+          projectId: parsedInput.projectId,
+          taskId: null
+        });
+      }
+
+      return deleted;
     },
     listResources() {
       return dependencies.resourceRepository.list();

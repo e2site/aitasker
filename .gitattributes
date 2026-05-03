@@ -1,0 +1,5 @@
+embeddings/**/*.safetensors filter=lfs diff=lfs merge=lfs -text
+embeddings/**/*.gguf filter=lfs diff=lfs merge=lfs -text
+embeddings/**/*.onnx_data filter=lfs diff=lfs merge=lfs -text
+embeddings/**/*.onnx filter=lfs diff=lfs merge=lfs -text
+embeddings/**/*.bin filter=lfs diff=lfs merge=lfs -text

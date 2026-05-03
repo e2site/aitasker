@@ -2,7 +2,7 @@
 Назначение: Запускает main process Electron, инициализирует локальные сервисы данных, отключает стандартное меню и поднимает MCP-сервер.
 Не входит: Получение Electron API, описание схемы базы и реализация renderer-интерфейса.
 */
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAgentRegistry } from "./agents/agent-registry";
 import { AgentSessionRepository } from "./db/agent-session-repository";
@@ -10,6 +10,7 @@ import { createAppDatabase } from "./db/database";
 import { PlanCommentRepository } from "./db/plan-comment-repository";
 import { PlanRepository } from "./db/plan-repository";
 import { ProjectRepository } from "./db/project-repository";
+import { PromptHintRepository } from "./db/prompt-hint-repository";
 import { PromptOverrideRepository } from "./db/prompt-override-repository";
 import { ResourceRepository } from "./db/resource-repository";
 import { TaskLinkRepository } from "./db/task-link-repository";
@@ -19,6 +20,7 @@ import { TaskResourceRepository } from "./db/task-resource-repository";
 import { createAppService } from "./services/app-service";
 import type { AppService } from "./services/app-service";
 import { createDevLogger } from "./services/dev-logger";
+import { createPromptVectorService } from "./services/prompt-vector-service";
 import { registerIpcHandlers } from "./ipc/register-ipc-handlers";
 import { McpHttpServer } from "./mcp/mcp-http-server";
 import { getWindowIconPath } from "./assets/app-icon-paths";
@@ -195,11 +197,16 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
     const planRepository = new PlanRepository(databaseContext.database);
     const planCommentRepository = new PlanCommentRepository(databaseContext.database);
     const projectRepository = new ProjectRepository(databaseContext.database);
+    const promptHintRepository = new PromptHintRepository(databaseContext.database);
     const promptOverrideRepository = new PromptOverrideRepository(databaseContext.database);
     const agentSessionRepository = new AgentSessionRepository(databaseContext.database);
     const resourceRepository = new ResourceRepository(databaseContext.database);
     const taskResourceRepository = new TaskResourceRepository(databaseContext.database);
     const taskContextRepository = new TaskContextRepository(databaseContext.database);
+    const promptVectorService = createPromptVectorService({
+      lanceDbPath: join(runtime.app.getPath("userData"), "prompt-vectors.lancedb"),
+      modelDirectory: resolve(APP_ROOT, process.env.EMBEDDINGS_MODEL_DIR ?? "embeddings")
+    });
     const agentRegistry = createAgentRegistry();
     let appService!: AppService;
     let mcpHttpServer: McpHttpServer | null = null;
@@ -239,7 +246,9 @@ export function bootstrapMainProcess(runtime: MainProcessRuntime): void {
       planRepository,
       platform: process.platform,
       projectRepository,
+      promptHintRepository,
       promptOverrideRepository,
+      promptVectorService,
       relaunchApp: () => {
         runtime.app.relaunch();
         runtime.app.exit(0);

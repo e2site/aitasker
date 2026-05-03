@@ -1,5 +1,5 @@
 /*
-Назначение: Описывает Drizzle-схему SQLite для проектов, задач, текущих планов, task context, ревизий планов и сессий агента.
+Назначение: Описывает Drizzle-схему SQLite для проектов, задач, подсказок, текущих планов, task context, ревизий планов и сессий агента.
 Не входит: Реализация запросов, подключение к базе и выполнение миграций.
 */
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -83,6 +83,16 @@ export const taskLinksTable = sqliteTable("task_links", {
 export const promptOverridesTable = sqliteTable("prompt_overrides", {
   id: text("id").primaryKey(),
   template: text("template").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+
+export const promptHintsTable = sqliteTable("prompt_hints", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projectsTable.id, { onDelete: "cascade" }),
+  text: text("text").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
 });
@@ -184,6 +194,7 @@ export const databaseSchema = {
   planRevisionsTable,
   plansTable,
   projectsTable,
+  promptHintsTable,
   promptOverridesTable,
   resourcesTable,
   taskAcceptanceCriteriaTable,

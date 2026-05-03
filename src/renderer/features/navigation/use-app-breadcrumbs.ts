@@ -31,6 +31,10 @@ export function useAppBreadcrumbs(): AppBreadcrumbItem[] {
     return [{ id: "resources", label: "Ресурсы" }];
   }
 
+  if (currentPage === "project-hints") {
+    return [{ id: "project-hints", label: "Подсказки" }];
+  }
+
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) ??

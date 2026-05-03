@@ -13,6 +13,10 @@ export function DesktopDataSync() {
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       void queryClient.invalidateQueries({ queryKey: ["tasks"] });
 
+      if (event.reason.includes("prompt-hint")) {
+        void queryClient.invalidateQueries({ queryKey: ["prompt-hints"] });
+      }
+
       if (event.taskId) {
         void queryClient.invalidateQueries({ queryKey: ["task-detail", event.taskId], exact: true });
         return;

@@ -1,5 +1,5 @@
 /*
-Назначение: Создает и мягко обновляет SQLite-таблицы приложения при запуске, включая миграции задач, проектов, task context и ревизий планов.
+Назначение: Создает и мягко обновляет SQLite-таблицы приложения при запуске, включая миграции задач, проектов, подсказок, task context и ревизий планов.
 Не входит: Генерация Drizzle-миграций и бизнес-логика доступа к данным.
 */
 import type Database from "better-sqlite3";
@@ -88,6 +88,14 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
     CREATE TABLE IF NOT EXISTS prompt_overrides (
       id TEXT PRIMARY KEY NOT NULL,
       template TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS prompt_hints (
+      id TEXT PRIMARY KEY NOT NULL,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      text TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -266,6 +274,7 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_plan_revisions_plan_id ON plan_revisions(plan_id);
     CREATE INDEX IF NOT EXISTS idx_task_links_source_task_id ON task_links(source_task_id);
     CREATE INDEX IF NOT EXISTS idx_task_links_target_task_id ON task_links(target_task_id);
+    CREATE INDEX IF NOT EXISTS idx_prompt_hints_project_id ON prompt_hints(project_id);
     CREATE INDEX IF NOT EXISTS idx_task_resources_task_id ON task_resources(task_id);
     CREATE INDEX IF NOT EXISTS idx_task_resources_resource_id ON task_resources(resource_id);
     CREATE INDEX IF NOT EXISTS idx_plan_comments_task_id ON plan_comments(task_id);

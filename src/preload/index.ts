@@ -8,18 +8,23 @@ import type {
   AppendPlanImprovementInput,
   ConsolidatePlanDiscussionInput,
   CreateProjectInput,
+  CreatePromptHintInput,
   CreateResourceInput,
   CreateTaskInput,
+  DeletePromptHintInput,
   DeletePromptOverrideInput,
   DesktopDataChangeEvent,
   DesktopApi,
+  ListPromptHintsInput,
   LinkResourceInput,
   LinkTaskInput,
   RestorePlanRevisionInput,
   SavePlanInput,
+  SearchPromptHintsInput,
   SetWindowTitleContextInput,
   UnlinkResourceInput,
   UnlinkTaskInput,
+  UpdatePromptHintInput,
   UpdateResourceInput,
   UpdateTaskInput,
   UpdateTaskStatusInput,
@@ -40,8 +45,10 @@ const channels = {
   appendPlanImprovement: "app:append-plan-improvement",
   consolidatePlanDiscussion: "app:consolidate-plan-discussion",
   createProject: "app:create-project",
+  createPromptHint: "app:create-prompt-hint",
   createResource: "app:create-resource",
   createTask: "app:create-task",
+  deletePromptHint: "app:delete-prompt-hint",
   deletePromptOverride: "app:delete-prompt-override",
   deleteResource: "app:delete-resource",
   deleteTask: "app:delete-task",
@@ -53,6 +60,7 @@ const channels = {
   importData: "app:import-data",
   linkResource: "app:link-resource",
   linkTask: "app:link-task",
+  listPromptHints: "app:list-prompt-hints",
   listPromptOverrides: "app:list-prompt-overrides",
   listProjects: "app:list-projects",
   listResources: "app:list-resources",
@@ -60,6 +68,7 @@ const channels = {
   onDataChanged: "app:data-changed",
   restorePlanRevision: "app:restore-plan-revision",
   savePlan: "app:save-plan",
+  searchPromptHints: "app:search-prompt-hints",
   setWindowTheme: "app:set-window-theme",
   setWindowTitleContext: "app:set-window-title-context",
   unlinkResource: "app:unlink-resource",
@@ -68,6 +77,7 @@ const channels = {
   updateTask: "app:update-task",
   updateTaskStatus: "app:update-task-status",
   updateProjectProfile: "app:update-project-profile",
+  updatePromptHint: "app:update-prompt-hint",
   upsertPromptOverride: "app:upsert-prompt-override"
 } as const;
 
@@ -88,6 +98,9 @@ export function registerDesktopApi(runtime: PreloadRuntime): void {
     createProject(input: CreateProjectInput) {
       return runtime.ipcRenderer.invoke(channels.createProject, input);
     },
+    createPromptHint(input: CreatePromptHintInput) {
+      return runtime.ipcRenderer.invoke(channels.createPromptHint, input);
+    },
     createTask(input: CreateTaskInput) {
       return runtime.ipcRenderer.invoke(channels.createTask, input);
     },
@@ -99,6 +112,9 @@ export function registerDesktopApi(runtime: PreloadRuntime): void {
     },
     deleteResource(id: string) {
       return runtime.ipcRenderer.invoke(channels.deleteResource, id);
+    },
+    deletePromptHint(input: DeletePromptHintInput) {
+      return runtime.ipcRenderer.invoke(channels.deletePromptHint, input);
     },
     exportData() {
       return runtime.ipcRenderer.invoke(channels.exportData);
@@ -120,6 +136,9 @@ export function registerDesktopApi(runtime: PreloadRuntime): void {
     },
     listProjects() {
       return runtime.ipcRenderer.invoke(channels.listProjects);
+    },
+    listPromptHints(input: ListPromptHintsInput) {
+      return runtime.ipcRenderer.invoke(channels.listPromptHints, input);
     },
     listTasks() {
       return runtime.ipcRenderer.invoke(channels.listTasks);
@@ -152,6 +171,9 @@ export function registerDesktopApi(runtime: PreloadRuntime): void {
     savePlan(input: SavePlanInput) {
       return runtime.ipcRenderer.invoke(channels.savePlan, input);
     },
+    searchPromptHints(input: SearchPromptHintsInput) {
+      return runtime.ipcRenderer.invoke(channels.searchPromptHints, input);
+    },
     setWindowTheme(theme: WindowTheme) {
       return runtime.ipcRenderer.invoke(channels.setWindowTheme, theme);
     },
@@ -163,6 +185,9 @@ export function registerDesktopApi(runtime: PreloadRuntime): void {
     },
     updateProjectProfile(input: UpdateProjectProfileInput) {
       return runtime.ipcRenderer.invoke(channels.updateProjectProfile, input);
+    },
+    updatePromptHint(input: UpdatePromptHintInput) {
+      return runtime.ipcRenderer.invoke(channels.updatePromptHint, input);
     },
     updateTask(input: UpdateTaskInput) {
       return runtime.ipcRenderer.invoke(channels.updateTask, input);

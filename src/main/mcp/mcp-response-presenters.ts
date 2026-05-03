@@ -1,5 +1,5 @@
 /*
-Назначение: Формирует компактные внешние ответы MCP из внутренних доменных моделей приложения.
+Назначение: Формирует компактные внешние ответы MCP из внутренних доменных моделей приложения, включая проекты, задачи, ресурсы и подсказки.
 Не входит: Регистрация MCP-инструментов, бизнес-логика сервисов и desktop-контракты renderer.
 */
 import type { AppService } from "../services/app-service";
@@ -8,6 +8,8 @@ import type { TaskContextSnapshot } from "../services/task-context";
 import type {
   PlanCommentRecord,
   PlanQuestionRecord,
+  PromptHintRecord,
+  PromptHintSearchResult,
   TaskContextRecord
 } from "../../shared/contracts/desktop-api";
 
@@ -191,6 +193,37 @@ export function serializeResource(resource: ResourceRecord) {
 export function serializeResourceCollection(resources: ResourceRecord[]) {
   return {
     resources: resources.map(serializeResource)
+  };
+}
+
+export function serializePromptHint(hint: PromptHintRecord) {
+  return {
+    id: hint.id,
+    projectId: hint.projectId,
+    text: hint.text,
+    updatedAt: hint.updatedAt
+  };
+}
+
+export function serializePromptHintCollection(hints: PromptHintRecord[], project: ProjectRecord) {
+  return {
+    project: serializeProjectSummary(project),
+    hints: hints.map(serializePromptHint)
+  };
+}
+
+export function serializePromptHintSearchCollection(
+  hints: PromptHintSearchResult[],
+  project: ProjectRecord,
+  keywords: string[]
+) {
+  return {
+    project: serializeProjectSummary(project),
+    keywords,
+    hints: hints.map((hint) => ({
+      ...serializePromptHint(hint),
+      score: hint.score
+    }))
   };
 }
 

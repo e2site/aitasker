@@ -1,10 +1,11 @@
-// Purpose: Bundle Electron main and preload sources into runnable ESM output for the desktop runtime.
-// Out of scope: Renderer bundling, release packaging, and type checking.
+// Назначение: Собирает Electron main, preload и worker entrypoints в ESM-файлы для desktop runtime.
+// Не входит: Сборка renderer, packaging релиза и TypeScript typecheck.
 import { defineConfig } from "tsup";
 
 export default defineConfig({
   entry: {
     "main/index": "src/main/index.ts",
+    "main/workers/prompt-vectors/prompt-vector.worker": "src/main/workers/prompt-vectors/prompt-vector.worker.ts",
     "preload/index": "src/preload/index.ts"
   },
   format: ["esm"],
@@ -17,5 +18,13 @@ export default defineConfig({
   clean: true,
   dts: false,
   shims: false,
-  external: ["electron", "electron/main", "electron/common", "electron/renderer", "better-sqlite3"]
+  external: [
+    "electron",
+    "electron/main",
+    "electron/common",
+    "electron/renderer",
+    "better-sqlite3",
+    "@lancedb/lancedb",
+    "@xenova/transformers"
+  ]
 });

@@ -57,7 +57,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "publish": null
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",

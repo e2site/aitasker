@@ -1,5 +1,5 @@
 /*
-Назначение: Headless-компонент — регистрирует действия в app-menu и управляет модальным окном создания задачи и toast-уведомлениями.
+Назначение: Headless-компонент — регистрирует действия в app-menu и управляет модальным окном создания задачи или подзадачи и toast-уведомлениями.
 Не входит: Таблица задач, поиск, фильтры, управление проектами.
 */
 import React, { useEffect, useRef, useState } from "react";
@@ -44,7 +44,7 @@ export interface TaskTableTopBarProps {
 }
 
 export interface TaskTableTopBarHandle {
-  openCreateTask(): void;
+  openCreateTask(parentTask?: TaskRecord | null): void;
   openProjectSettings(): void;
 }
 
@@ -56,6 +56,7 @@ export const TaskTableTopBar = React.forwardRef<TaskTableTopBarHandle, TaskTable
   function TaskTableTopBar(props, ref) {
     const setTaskActions = useSetAppMenuTaskActions();
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [createParentTask, setCreateParentTask] = useState<TaskRecord | null>(null);
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [showPromptOverridesModal, setShowPromptOverridesModal] = useState(false);
     const [toastMessage, setToastMessage] = useState<null | { description: string; title: string }>(null);
@@ -66,8 +67,18 @@ export const TaskTableTopBar = React.forwardRef<TaskTableTopBarHandle, TaskTable
     const selectedProject = props.projects.find((p) => p.id === props.selectedProjectId) ?? null;
     const projectSuggestions = props.projects.map((p) => p.name).sort((a, b) => a.localeCompare(b, "ru-RU"));
 
+    function openCreateModal(parentTask: TaskRecord | null = null) {
+      setCreateParentTask(parentTask);
+      setShowCreateModal(true);
+    }
+
+    function closeCreateModal() {
+      setShowCreateModal(false);
+      setCreateParentTask(null);
+    }
+
     React.useImperativeHandle(ref, () => ({
-      openCreateTask: () => setShowCreateModal(true),
+      openCreateTask: (parentTask = null) => openCreateModal(parentTask),
       openProjectSettings: () => setShowProjectModal(true),
     }));
 
@@ -110,7 +121,7 @@ export const TaskTableTopBar = React.forwardRef<TaskTableTopBarHandle, TaskTable
         isExportingData: props.isExportingData,
         isImportingData: props.isImportingData,
         onCopyAgentPrompt: handleCopyAgentPrompt,
-        onOpenCreateModal: () => setShowCreateModal(true),
+        onOpenCreateModal: () => openCreateModal(null),
         onOpenPromptOverrides: () => setShowPromptOverridesModal(true),
         onExportData: props.onExportData,
         onImportData: props.onImportData,
@@ -129,13 +140,14 @@ export const TaskTableTopBar = React.forwardRef<TaskTableTopBarHandle, TaskTable
     return (
       <>
         {showCreateModal && (
-          <Modal title="Новая задача" size="xl" onClose={() => setShowCreateModal(false)}>
+          <Modal title={createParentTask ? "Новая подзадача" : "Новая задача"} size="xl" onClose={closeCreateModal}>
             <TaskCreateForm
               isSubmitting={props.isCreating}
               onCreate={(input) => {
                 props.onCreate(input);
-                setShowCreateModal(false);
+                closeCreateModal();
               }}
+              parentTask={createParentTask}
               projectSuggestions={projectSuggestions}
               selectedProjectName={selectedProject?.name ?? null}
             />

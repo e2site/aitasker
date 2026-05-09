@@ -1,5 +1,5 @@
 /*
-Назначение: Хранит и предоставляет общий контекст MCP-контроллера: активный проект, состояние агентской сессии и общие helper-функции.
+Назначение: Хранит и предоставляет общий контекст MCP-контроллера: активный проект, состояние агентской сессии и общие helper-функции для проектов, задач и подзадач.
 Не входит: Регистрация MCP-инструментов, prompt-ов и resource-шаблонов.
 */
 import { createTaskContext } from "../../services/task-context";
@@ -49,6 +49,7 @@ export function findTasksByQuery(tasks: TaskRecord[], query: string, limit: numb
     .filter((task) => {
       const haystack = [
         task.id,
+        task.parentTaskId ?? "",
         task.projectId,
         task.projectName,
         task.title,

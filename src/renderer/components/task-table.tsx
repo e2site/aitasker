@@ -1,10 +1,10 @@
 /*
-Назначение: Рендерит топ-бар (поиск, фильтры статусов) и таблицу задач.
+Назначение: Рендерит топ-бар (поиск, фильтры статусов) и иерархическую таблицу задач с подзадачами.
 Не входит: Загрузка данных, панель деталей задачи, управление проектами.
 */
 import * as React from "react";
 import { useAtom } from "jotai";
-import { ChevronDown, ChevronUp, ChevronsUpDown, Search, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown, CornerDownRight, Search, X } from "lucide-react";
 import {
   flexRender,
   getCoreRowModel,
@@ -24,6 +24,11 @@ import {
   TableRow,
 } from "@/renderer/components/ui/table";
 import { TASK_STATUS_LIST, getTaskStatusMeta } from "@/renderer/features/tasks/task-status-meta";
+import {
+  buildTaskTreeRows,
+  hasActiveTaskFilters,
+  type TaskTreeRow
+} from "@/renderer/features/tasks/task-tree";
 import {
   taskSortAtom,
   STATUS_ORDER,
@@ -64,8 +69,10 @@ export interface TaskTableProps {
   filteredCount: number;
   totalCount: number;
   selectedTaskId: string | null;
+  expandedTaskIds: ReadonlySet<string>;
   showProject: boolean;
   onSelect(taskId: string): void;
+  onToggleExpanded(taskId: string): void;
   searchQuery: string;
   selectedStatuses: TaskStatus[];
   onSearchChange(query: string): void;
@@ -77,8 +84,10 @@ export function TaskTable({
   filteredCount,
   totalCount,
   selectedTaskId,
+  expandedTaskIds,
   showProject,
   onSelect,
+  onToggleExpanded,
   searchQuery,
   selectedStatuses,
   onSearchChange,
@@ -102,20 +111,72 @@ export function TaskTable({
   };
 
   const sortedTasks = React.useMemo(() => sortTasks(tasks, sort), [tasks, sort]);
+  const forceExpanded = hasActiveTaskFilters({ searchQuery, selectedStatuses });
+  const treeRows = React.useMemo(
+    () => buildTaskTreeRows(sortedTasks, expandedTaskIds, { forceExpanded }),
+    [expandedTaskIds, forceExpanded, sortedTasks]
+  );
 
-  const columns = React.useMemo<ColumnDef<TaskRecord>[]>(() => {
-    const cols: ColumnDef<TaskRecord>[] = [
+  const columns = React.useMemo<ColumnDef<TaskTreeRow>[]>(() => {
+    const cols: ColumnDef<TaskTreeRow>[] = [
+      {
+        id: "expander",
+        cell: ({ row }) => {
+          const treeRow = row.original;
+
+          if (!treeRow.hasChildren) {
+            return <span className="block size-6" />;
+          }
+
+          const expanded = forceExpanded || expandedTaskIds.has(treeRow.task.id);
+
+          return (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              title={expanded ? "Свернуть подзадачи" : "Показать подзадачи"}
+              aria-label={expanded ? "Свернуть подзадачи" : "Показать подзадачи"}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleExpanded(treeRow.task.id);
+              }}
+            >
+              {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+            </Button>
+          );
+        },
+      },
       {
         id: "status",
-        cell: ({ row }) => <TaskStatusBadge status={row.original.status} />,
+        cell: ({ row }) => (
+          <div style={{ paddingLeft: `${row.original.depth * 18}px` }}>
+            <TaskStatusBadge status={row.original.task.status} />
+          </div>
+        ),
       },
       {
         id: "title",
         cell: ({ row }) => (
-          <div className="max-w-xs lg:max-w-sm">
-            <p className="truncate font-medium">{row.original.title}</p>
-            {row.original.description ? (
-              <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{row.original.description}</p>
+          <div
+            className="flex max-w-xs items-start gap-2 lg:max-w-sm"
+            style={{ paddingLeft: `${row.original.depth * 18}px` }}
+          >
+            {row.original.depth > 0 ? (
+              <CornerDownRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+            ) : null}
+            <div className="min-w-0">
+              <p className="truncate font-medium">{row.original.task.title}</p>
+              {row.original.task.description ? (
+                <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                  {row.original.task.description}
+                </p>
+              ) : null}
+            </div>
+            {row.original.depth === 0 && row.original.hasChildren ? (
+              <span className="mt-0.5 shrink-0 text-xs text-muted-foreground" title="Количество подзадач">
+                {row.original.childrenCount}
+              </span>
             ) : null}
           </div>
         ),
@@ -127,7 +188,7 @@ export function TaskTable({
         id: "projectName",
         cell: ({ row }) => (
           <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
-            {row.original.projectName}
+            {row.original.task.projectName}
           </span>
         ),
       });
@@ -138,7 +199,7 @@ export function TaskTable({
         id: "createdAt",
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-xs text-muted-foreground">
-            {formatDate(row.original.createdAt)}
+            {formatDate(row.original.task.createdAt)}
           </span>
         ),
       },
@@ -146,7 +207,7 @@ export function TaskTable({
         id: "updatedAt",
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-xs text-muted-foreground">
-            {formatDate(row.original.updatedAt)}
+            {formatDate(row.original.task.updatedAt)}
           </span>
         ),
       },
@@ -154,19 +215,19 @@ export function TaskTable({
         id: "shortId",
         cell: ({ row }) => (
           <span className="font-mono text-xs text-muted-foreground">
-            {row.original.id.slice(0, 8).toUpperCase()}
+            {row.original.task.id.slice(0, 8).toUpperCase()}
           </span>
         ),
       }
     );
 
     return cols;
-  }, [showProject]);
+  }, [expandedTaskIds, forceExpanded, onToggleExpanded, showProject]);
 
   const table = useReactTable({
-    data: sortedTasks,
+    data: treeRows,
     columns,
-    getRowId: (row) => row.id,
+    getRowId: (row) => row.task.id,
     getCoreRowModel: getCoreRowModel(),
   });
 
@@ -236,6 +297,7 @@ export function TaskTable({
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10" />
                 {visibleFields.map((field) => (
                   <TableHead
                     key={field}
@@ -259,11 +321,12 @@ export function TaskTable({
             </TableHeader>
             <TableBody>
               {table.getRowModel().rows.map((row) => {
-                const isActive = row.original.id === selectedTaskId;
+                const task = row.original.task;
+                const isActive = task.id === selectedTaskId;
                 return (
                   <TableRow
                     key={row.id}
-                    onClick={() => onSelect(row.original.id)}
+                    onClick={() => onSelect(task.id)}
                     data-state={isActive ? "selected" : undefined}
                     className="cursor-pointer"
                   >

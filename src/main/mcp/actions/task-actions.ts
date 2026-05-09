@@ -1,5 +1,5 @@
 /*
-Назначение: Регистрирует MCP-экшены домена задач: создание, чтение, поиск, синхронизация состояния и смена статуса.
+Назначение: Регистрирует MCP-экшены домена задач и подзадач: создание, чтение, поиск, синхронизация состояния и смена статуса.
 Не входит: Операции с карточкой проекта, план-обсуждением, ресурсами и prompt-ами.
 */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -23,10 +23,49 @@ export function registerTaskActions(server: McpServer, context: McpControllerCon
       const project = await context.requirePreparedProject();
       context.getLogger().info("mcp", "Tool create_task called", { projectId: project.id, title });
       const detail = await context.getAppService().createTask({ title, description, projectId: project.id });
+      const projectTasks = await context.getAppService().listTasks(project.id);
 
       return {
         content: textContent("Задача создана."),
-        structuredContent: serializeTaskDetail(detail)
+        structuredContent: serializeTaskDetail(detail, projectTasks)
+      };
+    }
+  );
+
+  server.registerTool(
+    "create_sub_task",
+    {
+      description: "Создать подзадачу внутри активного подготовленного проекта по id родительской задачи.",
+      inputSchema: {
+        parentTaskId: z.string().min(1),
+        title: z.string().min(3),
+        description: z.string().min(12)
+      }
+    },
+    async ({ description, parentTaskId, title }) => {
+      const project = await context.requirePreparedProject();
+      const parentDetail = await context.getAppService().getTaskDetail(parentTaskId);
+
+      if (parentDetail.task.projectId !== project.id) {
+        throw new Error("Родительская задача должна находиться в активном проекте.");
+      }
+
+      context.getLogger().info("mcp", "Tool create_sub_task called", {
+        parentTaskId,
+        projectId: project.id,
+        title
+      });
+      const detail = await context.getAppService().createTask({
+        description,
+        parentTaskId,
+        projectId: project.id,
+        title
+      });
+      const projectTasks = await context.getAppService().listTasks(project.id);
+
+      return {
+        content: textContent("Подзадача создана."),
+        structuredContent: serializeTaskDetail(detail, projectTasks)
       };
     }
   );
@@ -68,7 +107,7 @@ export function registerTaskActions(server: McpServer, context: McpControllerCon
       });
       const tasks = await context.getAppService().listTasks(project.id);
       const matches = findTasksByQuery(tasks, query, limit ?? 5);
-      const response = serializeTaskCollection(matches, project);
+      const response = serializeTaskCollection(matches, project, tasks);
 
       return {
         content: textContent(JSON.stringify(response, null, 2)),
@@ -90,7 +129,8 @@ export function registerTaskActions(server: McpServer, context: McpControllerCon
       context.getLogger().debug("mcp", "Tool get_task called", { taskId });
       const taskContext = createTaskContext(taskId, context.getAppService());
       const snapshot = await taskContext.getSnapshot();
-      const response = serializeTaskSnapshot(snapshot);
+      const projectTasks = await context.getAppService().listTasks(snapshot.project.id);
+      const response = serializeTaskSnapshot(snapshot, projectTasks);
 
       return {
         content: textContent(JSON.stringify(response, null, 2)),
@@ -144,9 +184,12 @@ export function registerTaskActions(server: McpServer, context: McpControllerCon
           throw new Error("Не удалось вычислить контекст для delta-режима.");
         }
 
-        const snapshot = await taskContext.getSnapshot();
+        const [snapshot, projectTasks] = await Promise.all([
+          taskContext.getSnapshot(),
+          context.getAppService().listTasks(taskProjectId)
+        ]);
         context.updateAgentSession(toDeltaMode(session));
-        const response = serializeDeltaSnapshot(snapshot, since);
+        const response = serializeDeltaSnapshot(snapshot, since, projectTasks);
 
         return {
           content: textContent(JSON.stringify(response, null, 2)),
@@ -154,9 +197,12 @@ export function registerTaskActions(server: McpServer, context: McpControllerCon
         };
       }
 
-      const snapshot = await taskContext.getSnapshot();
+      const [snapshot, projectTasks] = await Promise.all([
+        taskContext.getSnapshot(),
+        context.getAppService().listTasks(taskProjectId)
+      ]);
       context.updateAgentSession(startWork(session, taskId));
-      const response = serializeTaskSnapshot(snapshot);
+      const response = serializeTaskSnapshot(snapshot, projectTasks);
 
       return {
         content: textContent(JSON.stringify(response, null, 2)),
@@ -181,10 +227,11 @@ export function registerTaskActions(server: McpServer, context: McpControllerCon
       context.getLogger().info("mcp", "Tool update_task_status called", { taskId, status });
       await taskContext.updateStatus(status);
       const snapshot = await taskContext.getSnapshot();
+      const projectTasks = await context.getAppService().listTasks(snapshot.project.id);
 
       return {
         content: textContent("Статус обновлен."),
-        structuredContent: serializeTaskSnapshot(snapshot)
+        structuredContent: serializeTaskSnapshot(snapshot, projectTasks)
       };
     }
   );

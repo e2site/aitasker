@@ -1,5 +1,5 @@
 /*
-Назначение: Создает и мягко обновляет SQLite-таблицы приложения при запуске, включая миграции задач, проектов, подсказок, task context и ревизий планов.
+Назначение: Создает и мягко обновляет SQLite-таблицы приложения при запуске, включая миграции задач с подзадачами, проектов, подсказок, task context и ревизий планов.
 Не входит: Генерация Drizzle-миграций и бизнес-логика доступа к данным.
 */
 import type Database from "better-sqlite3";
@@ -37,6 +37,7 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY NOT NULL,
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      parent_task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
       description TEXT NOT NULL,
       status TEXT NOT NULL,
@@ -179,6 +180,10 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
     sqlite.exec(`ALTER TABLE tasks ADD COLUMN project_id TEXT;`);
   }
 
+  if (!hasColumn(sqlite, "tasks", "parent_task_id")) {
+    sqlite.exec(`ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE;`);
+  }
+
   if (!hasColumn(sqlite, "projects", "description")) {
     sqlite.exec(`ALTER TABLE projects ADD COLUMN description TEXT NOT NULL DEFAULT '';`);
   }
@@ -270,6 +275,7 @@ export function bootstrapDatabase(sqlite: Database.Database): void {
 
   sqlite.exec(`
     CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_parent_task_id ON tasks(parent_task_id);
     CREATE INDEX IF NOT EXISTS idx_plan_revisions_task_id ON plan_revisions(task_id);
     CREATE INDEX IF NOT EXISTS idx_plan_revisions_plan_id ON plan_revisions(plan_id);
     CREATE INDEX IF NOT EXISTS idx_task_links_source_task_id ON task_links(source_task_id);

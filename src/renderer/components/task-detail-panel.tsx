@@ -1,9 +1,9 @@
 /*
-Назначение: Показывает выбранную задачу в Jira-like layout, включая статус, план, контракт задачи, быстрые MCP-действия и ограничения интерфейса при незакрытых вопросах.
+Назначение: Показывает выбранную задачу или подзадачу в Jira-like layout, включая статус, план, контракт задачи, быстрые MCP-действия и ограничения интерфейса при незакрытых вопросах.
 Не входит: Отрисовка списка задач и форма создания задач.
 */
 import { useEffect, useState } from "react";
-import { Eye, FilePlus, Pencil, Trash2 } from "lucide-react";
+import { Eye, FilePlus, ListPlus, Pencil, Trash2 } from "lucide-react";
 import { McpPlanningPanel } from "@/renderer/components/mcp-planning-panel";
 import { SearchBar } from "@/renderer/components/search-bar";
 import { TaskPlanWorkspace } from "@/renderer/components/task-plan-workspace";
@@ -47,6 +47,7 @@ export interface TaskDetailPanelProps {
   onAnswerPlanQuestion(taskId: string, questionId: string, answer: string): void;
   onAppendPlanExtension(taskId: string, content: string): void;
   onAppendPlanImprovement(taskId: string, content: string): void;
+  onCreateSubtask(parentTaskId: string): void;
   onDeleteTask(taskId: string): void;
   onLinkResource(resourceId: string, comment: string): void;
   onLinkTask(targetTaskId: string, comment: string): void;
@@ -110,6 +111,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   }
 
   const detail = props.detail;
+  const isSubtask = detail.task.parentTaskId !== null;
   const openQuestionsCount = getOpenQuestionsCount(detail);
   const hasOpenQuestions = openQuestionsCount > 0;
   const busy = isTaskDetailBusy({
@@ -150,6 +152,15 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             )}
             <button
               type="button"
+              title="Создать подзадачу"
+              disabled={props.isDeletingTask}
+              onClick={() => props.onCreateSubtask(detail.task.id)}
+              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground/70 disabled:pointer-events-none disabled:opacity-40"
+            >
+              <ListPlus className="size-4" />
+            </button>
+            <button
+              type="button"
               title="Удалить задачу"
               disabled={busy}
               onClick={() => props.onDeleteTask(detail.task.id)}
@@ -164,6 +175,11 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
           <span className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
             TASK-{detail.task.id.slice(0, 8).toUpperCase()}
           </span>
+          {isSubtask ? (
+            <span className="rounded bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">
+              Подзадача
+            </span>
+          ) : null}
           <div className="w-48">
             <TaskStatusDropdown
               status={detail.task.status}

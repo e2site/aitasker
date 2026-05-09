@@ -1,5 +1,5 @@
 /*
-Назначение: Показывает страницу подсказок проекта с поиском, таблицей и Markdown-панелью просмотра, создания и редактирования.
+Назначение: Показывает страницу подсказок проекта с ручным поиском, таблицей и Markdown-панелью просмотра, создания и редактирования.
 Не входит: Прямой доступ к SQLite/LanceDB, настройка embedding-модели и бизнес-логика HintContext.
 */
 import { useEffect, useMemo, useState } from "react";
@@ -36,6 +36,11 @@ const DEFAULT_SEARCH_LIMIT = 8;
 
 type PanelMode = "view" | "create" | "edit";
 
+interface AppliedSearch {
+  limit: number;
+  query: string;
+}
+
 export function ProjectHintsPage() {
   const selectedProjectId = useAtomValue(selectedProjectIdAtom);
   const { data: projects = [] } = useProjectsQuery();
@@ -46,6 +51,7 @@ export function ProjectHintsPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchLimit, setSearchLimit] = useState(DEFAULT_SEARCH_LIMIT);
+  const [appliedSearch, setAppliedSearch] = useState<AppliedSearch | null>(null);
   const [selectedHintId, setSelectedHintId] = useState<string | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("view");
   const [createDraft, setCreateDraft] = useState("");
@@ -53,19 +59,25 @@ export function ProjectHintsPage() {
   const [editorResetKey, setEditorResetKey] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const normalizedSearchQuery = searchQuery.trim();
+  const normalizedDraftSearchQuery = searchQuery.trim();
+  const activeSearchQuery = appliedSearch?.query ?? "";
+  const activeSearchLimit = appliedSearch?.limit ?? searchLimit;
   const searchResultsQuery = usePromptHintSearchQuery(
     selectedProjectId,
-    normalizedSearchQuery,
-    searchLimit
+    activeSearchQuery,
+    activeSearchLimit
   );
 
   const selectedProject = selectedProjectId
     ? projects.find((project) => project.id === selectedProjectId) ?? null
     : null;
   const allHints = hintsQuery.data ?? [];
-  const displayHints = normalizedSearchQuery ? searchResultsQuery.data ?? [] : allHints;
-  const isDisplayFetching = normalizedSearchQuery ? searchResultsQuery.isFetching : hintsQuery.isFetching;
+  const searchActive = Boolean(activeSearchQuery);
+  const hasPendingSearchChanges =
+    Boolean(normalizedDraftSearchQuery) &&
+    (!appliedSearch || normalizedDraftSearchQuery !== appliedSearch.query || searchLimit !== appliedSearch.limit);
+  const displayHints = searchActive ? searchResultsQuery.data ?? [] : allHints;
+  const isDisplayFetching = searchActive ? searchResultsQuery.isFetching : hintsQuery.isFetching;
   const selectedHint = useMemo(
     () =>
       allHints.find((hint) => hint.id === selectedHintId) ??
@@ -82,6 +94,9 @@ export function ProjectHintsPage() {
     hintsQuery.error?.message;
 
   useEffect(() => {
+    setSearchQuery("");
+    setSearchLimit(DEFAULT_SEARCH_LIMIT);
+    setAppliedSearch(null);
     setSelectedHintId(null);
     setPanelMode("view");
     setCreateDraft("");
@@ -144,6 +159,25 @@ export function ProjectHintsPage() {
     setPanelMode("view");
   }
 
+  function applySearch() {
+    if (!normalizedDraftSearchQuery) {
+      setAppliedSearch(null);
+      return;
+    }
+
+    if (appliedSearch?.query === normalizedDraftSearchQuery && appliedSearch.limit === searchLimit) {
+      void searchResultsQuery.refetch();
+      return;
+    }
+
+    setAppliedSearch({ query: normalizedDraftSearchQuery, limit: searchLimit });
+  }
+
+  function resetSearch() {
+    setSearchQuery("");
+    setAppliedSearch(null);
+  }
+
   function startEdit() {
     if (!selectedHint) {
       return;
@@ -170,6 +204,7 @@ export function ProjectHintsPage() {
       {
         onSuccess(hint) {
           setSearchQuery("");
+          setAppliedSearch(null);
           setCreateDraft("");
           setSelectedHintId(hint.id);
           setPanelMode("view");
@@ -264,11 +299,15 @@ export function ProjectHintsPage() {
                 isFetching={isDisplayFetching}
                 limit={searchLimit}
                 query={searchQuery}
-                searchActive={Boolean(normalizedSearchQuery)}
+                searchActive={searchActive}
+                searchActiveQuery={activeSearchQuery}
+                searchPending={hasPendingSearchChanges}
                 selectedHintId={selectedHintId}
                 totalCount={allHints.length}
                 onLimitChange={setSearchLimit}
                 onQueryChange={setSearchQuery}
+                onResetSearch={resetSearch}
+                onSearch={applySearch}
                 onSelect={selectHint}
               />
             </div>
@@ -311,10 +350,14 @@ interface PromptHintsTableProps {
   limit: number;
   query: string;
   searchActive: boolean;
+  searchActiveQuery: string;
+  searchPending: boolean;
   selectedHintId: string | null;
   totalCount: number;
   onLimitChange(limit: number): void;
   onQueryChange(query: string): void;
+  onResetSearch(): void;
+  onSearch(): void;
   onSelect(hintId: string): void;
 }
 
@@ -324,10 +367,14 @@ function PromptHintsTable({
   limit,
   query,
   searchActive,
+  searchActiveQuery,
+  searchPending,
   selectedHintId,
   totalCount,
   onLimitChange,
   onQueryChange,
+  onResetSearch,
+  onSearch,
   onSelect
 }: PromptHintsTableProps) {
   const emptyText = searchActive
@@ -362,8 +409,27 @@ function PromptHintsTable({
           title="Лимит поиска"
         />
 
-        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-          {searchActive ? `${hints.length} из ${totalCount}` : `${totalCount} подсказок`}
+        <Button type="button" size="sm" disabled={!query.trim() || isFetching} onClick={onSearch}>
+          <Search className="size-3.5" />
+          Найти
+        </Button>
+
+        {searchActive ? (
+          <Button type="button" variant="outline" size="sm" disabled={isFetching} onClick={onResetSearch}>
+            <X className="size-3.5" />
+            Сбросить
+          </Button>
+        ) : null}
+
+        <span
+          className="ml-auto max-w-72 truncate text-xs text-muted-foreground tabular-nums"
+          title={searchActive ? `Активный поиск: ${searchActiveQuery}` : undefined}
+        >
+          {searchPending
+            ? "нажмите Найти"
+            : searchActive
+              ? `${hints.length} из ${totalCount} найдено`
+              : `${totalCount} подсказок`}
         </span>
       </div>
 

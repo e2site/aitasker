@@ -1,8 +1,8 @@
 /*
-Назначение: Рендерит основной workspace — таблицу задач и split-панель деталей задачи.
+Назначение: Рендерит основной workspace — иерархическую таблицу задач с подзадачами и split-панель деталей задачи.
 Не входит: Многостраничная навигация, совместное редактирование и сложные approval-flow.
 */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronsLeft, ChevronsRight, X } from "lucide-react";
 import { useAtom } from "jotai";
 import { AppShell } from "@/renderer/components/app-shell";
@@ -37,6 +37,7 @@ import {
 } from "@/renderer/features/resources/use-resource-mutations";
 import type { TaskStatus } from "@/shared/contracts/desktop-api";
 import { getTaskStatusMeta } from "@/renderer/features/tasks/task-status-meta";
+import { collectAncestorTaskIds, filterTasksForTree } from "@/renderer/features/tasks/task-tree";
 import { cn } from "@/renderer/components/ui/class-names";
 
 export function HomePage() {
@@ -67,6 +68,7 @@ export function HomePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<TaskStatus[]>([]);
   const [tableCollapsed, setTableCollapsed] = useState(false);
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(() => new Set());
 
   const topBarRef = useRef<TaskTableTopBarHandle>(null);
 
@@ -94,19 +96,38 @@ export function HomePage() {
     });
   }, [selectedProjectName, selectedTaskTitle]);
 
-  const visibleTasks = selectedProjectId
-    ? allTasks.filter((task) => task.projectId === selectedProjectId)
-    : allTasks;
+  const visibleTasks = useMemo(
+    () => selectedProjectId
+      ? allTasks.filter((task) => task.projectId === selectedProjectId)
+      : allTasks,
+    [allTasks, selectedProjectId]
+  );
+  const rootVisibleTasks = useMemo(
+    () => visibleTasks.filter((task) => task.parentTaskId === null),
+    [visibleTasks]
+  );
+  const filteredTaskTree = useMemo(
+    () => filterTasksForTree(visibleTasks, { searchQuery, selectedStatuses }),
+    [searchQuery, selectedStatuses, visibleTasks]
+  );
+  const filteredTasks = filteredTaskTree.tasks;
+  const collapsedRailTasks = filteredTasks.filter(
+    (task) => task.parentTaskId === null || task.id === selectedTaskId
+  );
 
-  const filteredTasks = visibleTasks
-    .filter((task) => selectedStatuses.length === 0 || selectedStatuses.includes(task.status))
-    .filter(
-      (task) =>
-        !searchQuery ||
-        task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        task.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (task.planContentMd ?? "").toLowerCase().includes(searchQuery.toLowerCase())
-    );
+  const toggleTaskExpanded = (taskId: string) => {
+    setExpandedTaskIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (selectedProjectId === null) return;
@@ -115,16 +136,40 @@ export function HomePage() {
   }, [projects, selectedProjectId, setSelectedProjectId]);
 
   useEffect(() => {
+    const defaultTasks = rootVisibleTasks.length > 0 ? rootVisibleTasks : visibleTasks;
     const inProject = visibleTasks.some((task) => task.id === selectedTaskId);
-    if (!selectedTaskId && visibleTasks.length > 0) {
-      setSelectedTaskId(visibleTasks[0].id);
+
+    if (!selectedTaskId && defaultTasks.length > 0) {
+      setSelectedTaskId(defaultTasks[0].id);
       return;
     }
     if (!inProject) {
-      setSelectedTaskId(visibleTasks[0]?.id ?? null);
+      setSelectedTaskId(defaultTasks[0]?.id ?? null);
       setEditorMode("view");
     }
-  }, [selectedProjectId, selectedTaskId, setEditorMode, setSelectedTaskId, visibleTasks]);
+  }, [rootVisibleTasks, selectedProjectId, selectedTaskId, setEditorMode, setSelectedTaskId, visibleTasks]);
+
+  useEffect(() => {
+    const ancestorIds = collectAncestorTaskIds(visibleTasks, selectedTaskId);
+
+    if (ancestorIds.length === 0) {
+      return;
+    }
+
+    setExpandedTaskIds((current) => {
+      const next = new Set(current);
+      let changed = false;
+
+      for (const ancestorId of ancestorIds) {
+        if (!next.has(ancestorId)) {
+          next.add(ancestorId);
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [selectedTaskId, visibleTasks]);
 
   const anyError =
     createTaskMutation.error || deleteTaskMutation.error || linkTaskMutation.error ||
@@ -157,6 +202,10 @@ export function HomePage() {
           createTaskMutation.mutate(input, {
             onSuccess(detail) {
               setSelectedProjectId(detail.task.projectId);
+              const parentTaskId = detail.task.parentTaskId;
+              if (parentTaskId) {
+                setExpandedTaskIds((current) => new Set(current).add(parentTaskId));
+              }
               setSelectedTaskId(detail.task.id);
               setEditorMode("view");
             }
@@ -187,7 +236,7 @@ export function HomePage() {
               >
                 <ChevronsRight className="size-4" />
               </button>
-              {filteredTasks.map((task) => (
+              {collapsedRailTasks.map((task) => (
                 <button
                   key={task.id}
                   type="button"
@@ -221,14 +270,16 @@ export function HomePage() {
               )}
               <TaskTable
                 tasks={filteredTasks}
-                filteredCount={filteredTasks.length}
+                filteredCount={filteredTaskTree.filteredCount}
                 totalCount={visibleTasks.length}
                 selectedTaskId={selectedTaskId}
+                expandedTaskIds={expandedTaskIds}
                 showProject={selectedProjectId === null}
                 onSelect={(taskId) => {
                   setSelectedTaskId(taskId);
                   setEditorMode("view");
                 }}
+                onToggleExpanded={toggleTaskExpanded}
                 searchQuery={searchQuery}
                 selectedStatuses={selectedStatuses}
                 onSearchChange={setSearchQuery}
@@ -284,11 +335,23 @@ export function HomePage() {
                   if (!confirmed) return;
                   deleteTaskMutation.mutate(taskId, {
                     onSuccess({ deletedTaskId }) {
-                      const nextTask = visibleTasks.find((t) => t.id !== deletedTaskId) ?? null;
+                      const deletedTask = visibleTasks.find((t) => t.id === deletedTaskId) ?? null;
+                      const nextTask = deletedTask?.parentTaskId
+                        ? visibleTasks.find((t) => t.id === deletedTask.parentTaskId) ?? null
+                        : rootVisibleTasks.find((t) => t.id !== deletedTaskId) ?? null;
                       setSelectedTaskId(nextTask?.id ?? null);
                       setEditorMode("view");
                     }
                   });
+                }}
+                onCreateSubtask={(parentTaskId) => {
+                  const parentTask = allTasks.find((task) => task.id === parentTaskId);
+
+                  if (!parentTask) {
+                    return;
+                  }
+
+                  topBarRef.current?.openCreateTask(parentTask);
                 }}
                 onRestorePlanRevision={(taskId, revisionId) => {
                   restorePlanRevisionMutation.mutate(

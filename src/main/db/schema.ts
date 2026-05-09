@@ -1,8 +1,8 @@
 /*
-Назначение: Описывает Drizzle-схему SQLite для проектов, задач, подсказок, текущих планов, task context, ревизий планов и сессий агента.
+Назначение: Описывает Drizzle-схему SQLite для проектов, задач с подзадачами, подсказок, текущих планов, task context, ревизий планов и сессий агента.
 Не входит: Реализация запросов, подключение к базе и выполнение миграций.
 */
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 export const projectsTable = sqliteTable("projects", {
   id: text("id").primaryKey(),
@@ -22,6 +22,7 @@ export const tasksTable = sqliteTable("tasks", {
   projectId: text("project_id")
     .notNull()
     .references(() => projectsTable.id, { onDelete: "cascade" }),
+  parentTaskId: text("parent_task_id").references((): AnySQLiteColumn => tasksTable.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description").notNull(),
   status: text("status").notNull(),

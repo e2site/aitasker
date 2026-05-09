@@ -1,5 +1,5 @@
 /*
-Назначение: Дает renderer и MCP единый сервисный API для работы с проектами, задачами, подсказками, планами, task context, расширениями и доработками.
+Назначение: Дает renderer и MCP единый сервисный API для работы с проектами, задачами, подзадачами, подсказками, планами, task context, расширениями и доработками.
 Не входит: Детали IPC-транспорта, управление Electron-окнами и низкоуровневый bootstrap SQLite.
 */
 import type {
@@ -220,7 +220,27 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
     };
   };
 
-  const resolveProjectForTask = async (input: CreateTaskInput): Promise<ProjectRecord> => {
+  const resolveTaskPlacement = async (input: CreateTaskInput): Promise<{ parentTaskId: string | null; project: ProjectRecord }> => {
+    if (input.parentTaskId) {
+      const parentTask = await dependencies.taskRepository.getById(input.parentTaskId);
+
+      if (!parentTask) {
+        throw new Error(`Parent task ${input.parentTaskId} was not found.`);
+      }
+
+      if (input.projectId && input.projectId !== parentTask.projectId) {
+        throw new Error("Подзадача должна находиться в том же проекте, что и родительская задача.");
+      }
+
+      const project = await dependencies.projectRepository.getById(parentTask.projectId);
+
+      if (!project) {
+        throw new Error(`Project ${parentTask.projectId} was not found.`);
+      }
+
+      return { parentTaskId: parentTask.id, project };
+    }
+
     if (input.projectId) {
       const project = await dependencies.projectRepository.getById(input.projectId);
 
@@ -228,11 +248,13 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
         throw new Error(`Project ${input.projectId} was not found.`);
       }
 
-      return project;
+      return { parentTaskId: null, project };
     }
 
     if (input.projectName) {
-      return dependencies.projectRepository.create({ name: input.projectName });
+      const project = await dependencies.projectRepository.create({ name: input.projectName });
+
+      return { parentTaskId: null, project };
     }
 
     throw new Error("Project id or project name is required.");
@@ -412,9 +434,10 @@ export function createAppService(dependencies: AppServiceDependencies): AppServi
     },
     async createTask(input) {
       const parsedInput = createTaskInputSchema.parse(input);
-      const project = await resolveProjectForTask(parsedInput);
+      const { parentTaskId, project } = await resolveTaskPlacement(parsedInput);
       const task = await dependencies.taskRepository.create({
         description: parsedInput.description,
+        parentTaskId,
         projectId: project.id,
         title: parsedInput.title
       });

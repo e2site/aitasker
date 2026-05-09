@@ -1,5 +1,5 @@
 /*
-Назначение: Формирует компактные внешние ответы MCP из внутренних доменных моделей приложения, включая проекты, задачи, ресурсы и подсказки.
+Назначение: Формирует компактные внешние ответы MCP из внутренних доменных моделей приложения, включая проекты, задачи с подзадачами, ресурсы и подсказки.
 Не входит: Регистрация MCP-инструментов, бизнес-логика сервисов и desktop-контракты renderer.
 */
 import type { AppService } from "../services/app-service";
@@ -54,10 +54,21 @@ export function serializeActivatedProject(project: ProjectRecord) {
   };
 }
 
-export function serializeTask(task: TaskRecord) {
+function collectChildTasks(task: TaskRecord, relatedTasks: TaskRecord[] = []) {
+  return relatedTasks
+    .filter((candidate) => candidate.parentTaskId === task.id)
+    .map((candidate) => ({
+      id: candidate.id,
+      title: candidate.title
+    }));
+}
+
+export function serializeTask(task: TaskRecord, relatedTasks: TaskRecord[] = []) {
   return {
+    children: collectChildTasks(task, relatedTasks),
     description: task.description,
     id: task.id,
+    parent: task.parentTaskId ? { id: task.parentTaskId } : null,
     projectId: task.projectId,
     projectName: task.projectName,
     status: task.status,
@@ -165,20 +176,24 @@ export function serializePlan(plan: TaskDetail["plan"], taskId: string, taskCont
   };
 }
 
-export function serializeTaskDetail(detail: TaskDetail) {
+export function serializeTaskDetail(detail: TaskDetail, projectTasks: TaskRecord[] = []) {
   return {
     linkedResources: detail.linkedResources.map(serializeLinkedResource),
     linkedTasks: detail.linkedTasks.map(serializeLinkedTask),
     plan: serializePlanBlock(detail.plan, detail.planComments, detail.planQuestions, detail.taskContext),
     project: serializeProjectSummary(detail.project),
-    task: serializeTask(detail.task)
+    task: serializeTask(detail.task, projectTasks)
   };
 }
 
-export function serializeTaskCollection(tasks: TaskRecord[], project?: ProjectRecord) {
+export function serializeTaskCollection(
+  tasks: TaskRecord[],
+  project?: ProjectRecord,
+  relatedTasks: TaskRecord[] = tasks
+) {
   return {
     project: project ? serializeProjectSummary(project) : null,
-    tasks: tasks.map(serializeTask)
+    tasks: tasks.map((task) => serializeTask(task, relatedTasks))
   };
 }
 
@@ -227,9 +242,9 @@ export function serializePromptHintSearchCollection(
   };
 }
 
-export function serializeTaskSnapshot(snapshot: TaskContextSnapshot) {
+export function serializeTaskSnapshot(snapshot: TaskContextSnapshot, projectTasks: TaskRecord[] = []) {
   return {
-    task: serializeTask(snapshot.task),
+    task: serializeTask(snapshot.task, projectTasks),
     project: serializeProjectSummary(snapshot.project),
     plan: serializePlanBlock(
       snapshot.plan,
@@ -244,11 +259,18 @@ export function serializeTaskSnapshot(snapshot: TaskContextSnapshot) {
 
 const UNCHANGED = { unchanged: true } as const;
 
-export function serializeDeltaSnapshot(snapshot: TaskContextSnapshot, since: number) {
+export function serializeDeltaSnapshot(
+  snapshot: TaskContextSnapshot,
+  since: number,
+  projectTasks: TaskRecord[] = []
+) {
   const sinceDate = new Date(since).toISOString();
 
   const taskUpdated = new Date(snapshot.task.updatedAt).getTime() > since;
-  const task = taskUpdated ? serializeTask(snapshot.task) : UNCHANGED;
+  const childrenUpdated = projectTasks.some(
+    (task) => task.parentTaskId === snapshot.task.id && new Date(task.createdAt).getTime() > since
+  );
+  const task = taskUpdated || childrenUpdated ? serializeTask(snapshot.task, projectTasks) : UNCHANGED;
 
   const planUpdated = snapshot.plan !== null && new Date(snapshot.plan.updatedAt).getTime() > since;
   const newComments = snapshot.planComments.filter((c) => new Date(c.updatedAt).getTime() > since);

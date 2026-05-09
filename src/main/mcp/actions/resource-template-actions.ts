@@ -1,5 +1,5 @@
 /*
-Назначение: Регистрирует MCP resource-template экшены для чтения task и plan через URI-схемы.
+Назначение: Регистрирует MCP resource-template экшены для чтения task с подзадачами и plan через URI-схемы.
 Не входит: Регистрация MCP-инструментов и prompt-ов.
 */
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -16,13 +16,14 @@ export function registerResourceTemplateActions(server: McpServer, context: McpC
     async (uri, variables) => {
       const taskContext = await context.requireTaskContext(String(variables.id));
       const task = await taskContext.getTask();
+      const projectTasks = await context.getAppService().listTasks(task.projectId);
 
       return {
         contents: [
           {
             uri: uri.href,
             mimeType: "application/json",
-            text: JSON.stringify(serializeTask(task), null, 2)
+            text: JSON.stringify(serializeTask(task, projectTasks), null, 2)
           }
         ]
       };

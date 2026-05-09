@@ -1,3 +1,7 @@
+/*
+Назначение: Отрисовывает страницу настройки базовых и переопределённых MCP-промтов.
+Не входит: Хранение промтов, модальный режим редактирования и выполнение MCP-команд.
+*/
 import { useRef, useState } from "react";
 import { Eye, RotateCcw, Save } from "lucide-react";
 import {
@@ -20,9 +24,11 @@ const PROMPT_LABELS: Record<PromptId, string> = {
   "activate-project": "Активация проекта",
   "agent-task-prompt": "Создать задачу в агенте",
   "plan-task": "Планирование задачи",
+  "create-subtasks": "Создать подзадачи",
   "reload-context": "Перезагрузка контекста",
   "clarify-plan": "Уточнение плана",
   "implementation": "Переход к реализации",
+  "implementation-with-subtasks": "Реализация с подзадачами",
   "finish-task": "Завершение задачи",
   "consolidate-discussion": "Сжать переписку в план",
   "project-skill": "Создание SKILL.md",

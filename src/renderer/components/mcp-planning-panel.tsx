@@ -132,8 +132,8 @@ export function McpPlanningPanel({ detail }: McpPlanningPanelProps) {
           <p className="app-label">Готовые кейсы</p>
           <h3 className="text-lg font-semibold tracking-tight text-foreground">Промты для копирования</h3>
           <p className="text-sm leading-6 text-foreground/70">
-            Используйте готовые сценарии для старта: активация проекта, планирование, уточнение, реализация,
-            сжатие переписки в план, завершение и обновление `SKILL.md`.
+            Используйте готовые сценарии для старта: активация проекта, планирование, создание подзадач,
+            уточнение, реализация, реализация с подзадачами, сжатие переписки в план, завершение и обновление `SKILL.md`.
           </p>
         </div>
 

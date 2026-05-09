@@ -1,5 +1,5 @@
 /*
-Назначение: Сохраняет, читает и удаляет задачи в локальной SQLite-базе вместе с их привязкой к проектам.
+Назначение: Сохраняет, читает и удаляет задачи и подзадачи в локальной SQLite-базе вместе с их привязкой к проектам.
 Не входит: Генерация планов, IPC и управление состоянием renderer.
 */
 import { randomUUID } from "node:crypto";
@@ -12,6 +12,7 @@ interface TaskRow {
   createdAt: Date;
   description: string;
   id: string;
+  parentTaskId: string | null;
   planContentMd: string | null;
   projectId: string;
   projectName: string;
@@ -44,6 +45,7 @@ function toTaskRecord(row: TaskRow): TaskRecord {
   return {
     id: row.id,
     projectId: row.projectId,
+    parentTaskId: row.parentTaskId,
     projectName: row.projectName,
     title: row.title,
     description: row.description,
@@ -56,6 +58,7 @@ function toTaskRecord(row: TaskRow): TaskRecord {
 
 export interface CreateTaskRecordInput {
   description: string;
+  parentTaskId?: string | null;
   projectId: string;
   title: string;
 }
@@ -72,6 +75,7 @@ export class TaskRepository {
       .values({
         id,
         projectId: input.projectId,
+        parentTaskId: input.parentTaskId ?? null,
         title: input.title,
         description: input.description,
         status: "new",
@@ -94,6 +98,7 @@ export class TaskRepository {
       .select({
         id: tasksTable.id,
         projectId: tasksTable.projectId,
+        parentTaskId: tasksTable.parentTaskId,
         projectName: projectsTable.name,
         title: tasksTable.title,
         description: tasksTable.description,
@@ -126,6 +131,7 @@ export class TaskRepository {
       .select({
         id: tasksTable.id,
         projectId: tasksTable.projectId,
+        parentTaskId: tasksTable.parentTaskId,
         projectName: projectsTable.name,
         title: tasksTable.title,
         description: tasksTable.description,

@@ -1,5 +1,5 @@
 /*
-Назначение: Дает React Query hooks для чтения, создания и удаления задач через preload API.
+Назначение: Дает React Query hooks для чтения, создания, обновления и удаления задач с подзадачами через preload API.
 Не входит: Отрисовка компонентов и локальное UI-состояние.
 */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,6 +11,7 @@ import type {
   UpdateTaskInput,
   UpdateTaskStatusInput
 } from "@/shared/contracts/desktop-api";
+import { collectDescendantTaskIds } from "@/renderer/features/tasks/task-tree";
 
 export function useTasksQuery() {
   return useQuery({
@@ -51,9 +52,10 @@ export function useDeleteTaskMutation() {
   return useMutation({
     mutationFn: (taskId: string) => window.desktop.deleteTask(taskId),
     onSuccess: async ({ deletedTaskId }) => {
-      queryClient.setQueryData<TaskRecord[]>(["tasks"], (previous = []) =>
-        previous.filter((task) => task.id !== deletedTaskId)
-      );
+      queryClient.setQueryData<TaskRecord[]>(["tasks"], (previous = []) => {
+        const removedIds = new Set([deletedTaskId, ...collectDescendantTaskIds(previous, deletedTaskId)]);
+        return previous.filter((task) => !removedIds.has(task.id));
+      });
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       queryClient.removeQueries({ queryKey: ["task-detail", deletedTaskId], exact: true });

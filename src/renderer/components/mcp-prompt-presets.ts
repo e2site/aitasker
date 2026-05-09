@@ -17,8 +17,10 @@ export type PromptId =
   | "activate-project"
   | "agent-task-prompt"
   | "plan-task"
+  | "create-subtasks"
   | "clarify-plan"
   | "implementation"
+  | "implementation-with-subtasks"
   | "finish-task"
   | "consolidate-discussion"
   | "reload-context"
@@ -187,6 +189,12 @@ export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
 5. Сохрани всё через save_plan.
 6. Переведи статус в planning, затем implementation через update_task_status.`,
 
+ "create-subtasks":
+  `Вызови sync_task с taskId {{taskId}}.
+По плану задачи "{{taskTitle}}" создай через create_sub_task независимые подзадачи с parentTaskId {{taskId}}, которые вместе закрывают goal.
+В каждой: короткий title и description с целью и описанием необходимым для планирования, границами и ожидаемым результатом.
+Не делай детальный анализ/план подзадач и не реализуй их. Это следующий этап.`,
+
  "clarify-plan":
   `Уточни план задачи "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}}.
 
@@ -215,6 +223,18 @@ export const BASE_PROMPT_TEMPLATES: Record<PromptId, string> = {
 5. Решения и проблемы фиксируй через append_plan_improvement.
 6. Проверь все ли goal выполнены, не нарушены forbiddenInterpretations и соответствует acceptanceCriteria
 7. После завершения переведи статус в testing через update_task_status.`,
+
+  "implementation-with-subtasks":
+  `Реализуй главную задачу "{{taskTitle}}" (ID: {{taskId}}) через её подзадачи.
+
+Шаги:
+1. Вызови sync_task с taskId {{taskId}} и получи общую картину: goal, criticalConditions, acceptanceCriteria, children.
+2. Сам выбери порядок подзадач из children. Если children пустой — реализуй главную задачу как обычную.
+3. Перед каждой подзадачей вызови sync_task/get_task по её id и прочитай plan, comments, questions, linkedResources и children.
+4. Ресурсы подзадачи читай через get_resource, если они влияют на реализацию.
+5. Если у подзадачи есть children — обработай их тем же правилом до завершения подзадачи.
+6. Реализуй подзадачи, фиксируй важные решения через append_plan_extension или append_plan_improvement и обновляй их статус через update_task_status.
+7. В конце снова синхронизируй главную задачу, проверь общий goal/acceptanceCriteria и переведи её в testing.`,
 
   "finish-task":
     `Заверши задачу "{{taskTitle}}" (ID: {{taskId}}) в проекте {{projectName}}.
@@ -285,6 +305,10 @@ const PROMPT_META: Record<PromptId, { title: string; description: string }> = {
     title: "Планирование задачи",
     description: "Составить и сохранить план задачи."
   },
+  "create-subtasks": {
+    title: "Создать подзадачи",
+    description: "Разбить текущий план на независимые подзадачи."
+  },
   "clarify-plan": {
     title: "Уточнение плана",
     description: "Перечитать план и уточнить его с учётом обсуждения."
@@ -292,6 +316,10 @@ const PROMPT_META: Record<PromptId, { title: string; description: string }> = {
   "implementation": {
     title: "Реализация",
     description: "Реализовать задачу по шагам плана."
+  },
+  "implementation-with-subtasks": {
+    title: "Реализация с подзадачами",
+    description: "Оркестрировать выполнение подзадач ради результата главной задачи."
   },
   "finish-task": {
     title: "Завершение задачи",
@@ -340,7 +368,7 @@ const PROMPTS_WITH_FULL_CONTEXT = new Set<PromptId>([
 
 // Промты где агент продолжает работу через sync_task — только связанные задачи, без инструкции по ресурсам
 const PROMPTS_WITH_LINKED_TASKS = new Set<PromptId>([
-  "clarify-plan", "implementation", "finish-task", "consolidate-discussion"
+  "clarify-plan", "implementation", "implementation-with-subtasks", "finish-task", "consolidate-discussion"
 ]);
 
 /** Полный суффикс: ресурсы с инструкцией + связанные задачи. Для первого чтения задачи. */

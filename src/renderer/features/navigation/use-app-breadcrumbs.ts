@@ -1,5 +1,5 @@
 /*
-Назначение: Собирает хлебные крошки верхнего layout на основе текущей страницы и выбранных сущностей и инкапсулирует переходы по ним.
+Назначение: Собирает хлебные крошки верхнего layout на основе текущей страницы, выбранных сущностей и цепочки подзадач, а также инкапсулирует переходы по ним.
 Не входит: Отрисовка header, загрузка drawer-контента и управление боковой панелью.
 */
 import { useAtom } from "jotai";
@@ -9,6 +9,7 @@ import { useProjectsQuery } from "@/renderer/features/projects/use-project-queri
 import { currentPageAtom } from "@/renderer/features/navigation/current-page-state";
 import { drawerPageAtom } from "@/renderer/features/navigation/drawer-state";
 import { selectedTaskIdAtom } from "@/renderer/features/tasks/selected-task-id-state";
+import { collectAncestorTaskIds } from "@/renderer/features/tasks/task-tree";
 import { useTasksQuery } from "@/renderer/features/tasks/use-task-queries";
 
 export interface AppBreadcrumbItem {
@@ -36,6 +37,7 @@ export function useAppBreadcrumbs(): AppBreadcrumbItem[] {
   }
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) ??
     projects.find((project) => project.id === selectedTask?.projectId) ??
@@ -72,6 +74,25 @@ export function useAppBreadcrumbs(): AppBreadcrumbItem[] {
   }
 
   if (selectedTask) {
+    const ancestorTasks = collectAncestorTaskIds(tasks, selectedTask.id)
+      .map((taskId) => tasksById.get(taskId) ?? null)
+      .filter((task) => task !== null);
+
+    for (const ancestorTask of ancestorTasks) {
+      items.push({
+        id: `task-${ancestorTask.id}`,
+        label: ancestorTask.title,
+        hideOnMobile: true,
+        onClick: () => {
+          setCurrentPage("tasks");
+          setDrawerPage(null);
+          setSelectedProjectId(ancestorTask.projectId);
+          setSelectedTaskId(ancestorTask.id);
+          setEditorMode("view");
+        }
+      });
+    }
+
     items.push({
       id: `task-${selectedTask.id}`,
       label: selectedTask.title

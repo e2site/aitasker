@@ -1,5 +1,5 @@
 /*
-Назначение: Описывает общие доменные модели, схемы валидации и preload/AppService-контракты десктопного приложения, включая операции с задачами, подсказками, планом, task context, обсуждением и статусами.
+Назначение: Описывает общие доменные модели, схемы валидации и preload/AppService-контракты десктопного приложения, включая операции с задачами, подзадачами, подсказками, планом, task context, обсуждением и статусами.
 Не входит: Реализация репозиториев, детали renderer-компонентов и интеграция с внешними SDK.
 */
 import { z } from "zod";
@@ -43,6 +43,7 @@ export type ProjectRecord = z.infer<typeof projectRecordSchema>;
 export const taskRecordSchema = z.object({
   id: z.string(),
   projectId: z.string(),
+  parentTaskId: z.string().nullable(),
   projectName: z.string(),
   title: z.string(),
   description: z.string(),
@@ -192,13 +193,18 @@ export const appHealthSnapshotSchema = z.object({
 });
 export type AppHealthSnapshot = z.infer<typeof appHealthSnapshotSchema>;
 
+function optionalTrimmedString(schema: z.ZodString) {
+  return z.string().trim().optional().transform((value) => value === "" ? undefined : value).pipe(schema.optional());
+}
+
 export const createTaskInputSchema = z.object({
   title: z.string().trim().min(3, "Введите минимум 3 символа в заголовке.").max(120),
   description: z.string().trim().min(12, "Опишите задачу хотя бы в 12 символах."),
-  projectId: z.string().trim().min(1).optional(),
-  projectName: z.string().trim().min(2, "Укажите проект минимум из 2 символов.").max(80).optional()
+  parentTaskId: optionalTrimmedString(z.string().min(1)),
+  projectId: optionalTrimmedString(z.string().min(1)),
+  projectName: optionalTrimmedString(z.string().min(2, "Укажите проект минимум из 2 символов.").max(80))
 }).superRefine((value, context) => {
-  if (value.projectId || value.projectName) {
+  if (value.parentTaskId || value.projectId || value.projectName) {
     return;
   }
 
